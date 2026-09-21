@@ -1,0 +1,74 @@
+PIIP — End User Licence Agreement
+Copyright (c) 2026 Routekernel. All rights reserved.
+
+Telegram : https://t.me/routekernel1
+YouTube  : https://youtube.com/@routekernel
+Project  : https://github.com/dreamboxone/piptv
+
+
+1. GRANT OF LICENCE
+
+Routekernel grants you a free, non-exclusive, worldwide licence to install
+and use this software on any number of receivers you own or administer, for
+personal or commercial purposes.
+
+You may redistribute the software, provided that:
+
+  a) it is distributed complete and unmodified, including this licence;
+  b) no fee is charged for the software itself; and
+  c) this copyright notice and the project links above remain intact.
+
+
+2. RESTRICTIONS
+
+You may not:
+
+  a) reverse engineer, decompile, disassemble or otherwise attempt to derive
+     the source code of any compiled component of this software, except to
+     the extent such restriction is prohibited by applicable law;
+  b) remove, alter or obscure any copyright, trademark or attribution notice;
+  c) sublicense, rent, lease or sell the software; or
+  d) represent the software, modified or otherwise, as your own work.
+
+
+3. THIRD PARTY SERVICES
+
+This software can connect to third party services, including but not limited
+to the Google Gemini API, OpenSubtitles and SubDL. Your use of those services
+is governed by their own terms, and any fees they charge are your own
+responsibility. Routekernel does not supply API keys and is not a party to
+your relationship with those providers.
+
+This software does not supply, host or endorse any television content. You
+are solely responsible for holding the rights to any stream, playlist,
+portal or subscription you configure it with.
+
+
+4. PRIVACY
+
+The software runs entirely on your own receiver. It sends no telemetry and
+collects no personal data. Audio is transmitted to the translation provider
+you configure, using the API key you supply, only while translation is
+enabled and only for as long as you are watching.
+
+
+5. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+
+6. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL ROUTEKERNEL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS USE, INCLUDING WITHOUT
+LIMITATION ANY COSTS INCURRED THROUGH THIRD PARTY APPLICATION PROGRAMMING
+INTERFACES.
+
+
+7. TERMINATION
+
+This licence terminates automatically if you breach any of its terms. On
+termination you must cease all use and destroy all copies of the software.

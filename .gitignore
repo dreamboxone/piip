@@ -1,0 +1,35 @@
+# Secrets — never commit these
+apikey.txt
+*apikey*.txt
+*.key
+
+# Build output
+dist/
+build/
+release/
+*.deb
+*.ipk
+*.so
+*.tar.gz
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local working files
+artifacts/
+feeds/
+aarch64/
+armhf/
+mipsel/
+*.log
+
+# Local tooling that inspects another vendor's package
+packaging/inspect_hybrid.py
