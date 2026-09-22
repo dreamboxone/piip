@@ -4,7 +4,14 @@
 import hashlib
 import json
 import os
-import sqlite3
+
+try:
+    import sqlite3
+except ImportError:
+    # Minimal images ship python3-core without python3-sqlite3. The cache is
+    # an optimisation, so the plugin must import and run without it; every
+    # caller already treats a failure here as "no offline copy".
+    sqlite3 = None
 
 ROOT = '/etc/enigma2/piip_db'
 
@@ -14,7 +21,13 @@ def path(identity, mode='content'):
     return os.path.join(ROOT, hashlib.md5(raw).hexdigest() + '.db')
 
 
+def available():
+    return sqlite3 is not None
+
+
 def connect(identity, mode='content'):
+    if sqlite3 is None:
+        raise RuntimeError('this image has no sqlite3; catalogue cache is off')
     if not os.path.isdir(ROOT):
         os.makedirs(ROOT)
     db = sqlite3.connect(path(identity, mode))

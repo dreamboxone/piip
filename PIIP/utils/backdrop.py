@@ -28,6 +28,22 @@ ICONS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(
     __file__))), 'icons')
 
 
+def pixmap(path, box=None):
+    """LoadPixmap, with the size argument only where the image accepts it.
+
+    Several images carry an older Tools.LoadPixmap whose signature has no
+    `size`, and passing it raised TypeError for every picture: the whole
+    interface came up with no artwork at all. Without it the picture keeps
+    its own size, which the widgets already scale.
+    """
+    if box is not None:
+        try:
+            return LoadPixmap(path, size=box)
+        except TypeError:
+            pass
+    return LoadPixmap(path)
+
+
 def load(screen, widget, filename):
     """Draw `filename` from the icons directory into `screen[widget]`."""
     path = os.path.join(ICONS, filename)
@@ -49,8 +65,7 @@ def load(screen, widget, filename):
             box = instance.size()
         except Exception:
             box = None
-        picture = (LoadPixmap(path, size=box) if box is not None
-                   else LoadPixmap(path))
+        picture = pixmap(path, box)
         if picture is None:
             note('artwork', 'not loadable: %s' % path)
             return False
@@ -72,7 +87,7 @@ def load_path(screen, widget, path):
         return False
     try:
         instance = screen[widget].instance
-        picture = LoadPixmap(path, size=instance.size())
+        picture = pixmap(path, instance.size())
         if picture is None:
             return False
         instance.setPixmap(picture)

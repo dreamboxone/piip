@@ -747,11 +747,11 @@ class FarsiPlayer(Screen):
     def _artworkReady(self, result, error):
         if error or not result:
             return
-        from Tools.LoadPixmap import LoadPixmap
+        from ..utils.backdrop import pixmap
         for widget, path in result.items():
             try:
                 instance = self[widget].instance
-                picture = LoadPixmap(path, size=instance.size())
+                picture = pixmap(path, instance.size())
                 if picture is not None:
                     instance.setPixmap(picture)
                     self[widget].show()
