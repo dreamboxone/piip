@@ -168,6 +168,7 @@ class DubPipeline(object):
         self.engine = None
         self.log_handle = None
         self.started_at = 0.0
+        self.reported_deaths = set()
 
     # ------------------------------------------------------------- runtime
 
@@ -197,6 +198,7 @@ class DubPipeline(object):
         kill_leftovers()
         time.sleep(0.3)
         self.log_handle = open(LOG, 'a')
+        self.reported_deaths = set()
         for path in (HELPER_STATE, RELAY_STATE, HTTP_STATE):
             try:
                 os.remove(path)
@@ -248,10 +250,25 @@ class DubPipeline(object):
     def processes(self):
         return [p for p in (self.engine.values() if self.engine else ()) if p]
 
+    NAMES = ('capture', 'capture tap', 'capture decode', 'gemini helper',
+             'relay', 'playback', 'http relay')
+
     def alive(self):
         procs = self.processes()
-        return (bool(procs) and all(p.poll() is None for p in procs) and
-                self.source is not None and self.source.alive())
+        if not procs:
+            return False
+        for name, proc in zip(self.NAMES, self.engine.values() if self.engine
+                              else ()):
+            if proc is None or proc.poll() is None:
+                continue
+            # Name the worker that died and what it returned: a pipeline that
+            # restarts in a loop otherwise says only that it restarted.
+            if name not in self.reported_deaths:
+                self.reported_deaths.add(name)
+                self._log('%s worker exited with code %s'
+                          % (name, proc.poll()))
+            return False
+        return self.source is not None and self.source.alive()
 
     def helper_state(self):
         return read_state(HELPER_STATE)
