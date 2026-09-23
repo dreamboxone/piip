@@ -283,9 +283,15 @@ class Engine(object):
         # is discarded merely because the viewer is intentionally delayed.
         queue_cap = max(float(self.cfg['max_backlog']),
                         float(self.cfg['delay']) + 4.0)
-        self.mixer = mx.Mixer(self.cfg['delay'], queue_cap)
-        self.mixer.gain_original = float(self.cfg['gain_original'])
-        self.mixer.gain_translated = float(self.cfg['gain_translated'])
+        # Passthrough copies the stream and mixes nothing, so it must not
+        # ask for an audio backend: on Python 3.13 and later there is no
+        # stdlib audioop, and demanding one here stopped the source engine
+        # of the dub pipeline from starting at all.
+        self.mixer = None
+        if not self.cfg.get('passthrough'):
+            self.mixer = mx.Mixer(self.cfg['delay'], queue_cap)
+            self.mixer.gain_original = float(self.cfg['gain_original'])
+            self.mixer.gain_translated = float(self.cfg['gain_translated'])
         self.video = mx.PacketDelay(self.cfg['delay'], steady)
 
         self.ff_in = None
@@ -654,8 +660,10 @@ class Engine(object):
 
     def _apply_delay(self):
         d = self.base_delay + self.extra_delay
-        self.mixer.set_delay(d)
         self.video.set_delay(d)
+        if self.mixer is None:
+            return
+        self.mixer.set_delay(d)
         # Scheduled speech legitimately waits up to the whole delay before
         # it is due; a cap below that would throw good translation away.
         self.mixer.translated.max_backlog = max(
@@ -793,6 +801,22 @@ class Engine(object):
 
     def _command(self, req):
         cmd = req.get('cmd')
+        if self.mixer is None and cmd in ('set_gain', 'status'):
+            # Passthrough has no mixer: answer with what this mode does have.
+            if cmd == 'set_gain':
+                return {'ok': False, 'error': 'passthrough has no mixer'}
+            return {'ok': True,
+                    'uptime': round(time.time() - self.started_at, 1),
+                    'position': round(self.position(), 1),
+                    'flowing': bool(self.video_started),
+                    'duration': int(self.cfg.get('duration') or 0),
+                    'seekable': bool(self.cfg.get('realtime')),
+                    'passthrough': True,
+                    'delay': self.video.seconds,
+                    'clock_late_max_ms': self.clock_late_max_ms,
+                    'video_held': self.video.bytes_held,
+                    'gemini': self.stats['gemini_state'],
+                    'stats': dict(self.stats)}
         if cmd == 'set_gain':
             # 1.0 is the ceiling: above unity the sum just clips.
             if 'original' in req:
@@ -842,6 +866,8 @@ class Engine(object):
 
     def _note_mix(self):
         m = self.mixer
+        if m is None:
+            return
         self.meter.add('mix_ticks')
         if m.last_present:
             self.meter.add('present_ticks')

@@ -213,5 +213,72 @@ finally:
     enigma.SCALE_STRETCH = 1
     del sk._MULTICONTENT[:]
 
+# ------------------------------- a Python with no audioop and no numpy,
+# ---------------------------------- which is every image from 3.13 on
+import math                                                    # noqa: E402
+from array import array                                        # noqa: E402
+
+from PIIP.translate import mixer as mx                          # noqa: E402
+
+had_backend = mx._backend
+mx._backend = 'python'
+try:
+    check('a gain halves the samples',
+          array('h', mx.scale(array('h', [1000, -1000]).tobytes(), 0.5))
+          .tolist() == [500, -500])
+    check('a sum stops at the ceiling instead of wrapping',
+          array('h', mx.add(array('h', [30000]).tobytes(),
+                            array('h', [30000]).tobytes())).tolist() == [32767])
+    check('the level of a flat signal is the signal',
+          mx.rms(array('h', [1000] * 100).tobytes()) == 1000)
+    check('silence has no level', mx.rms(b'') == 0)
+
+    tone = array('h', [int(12000 * math.sin(2 * math.pi * 1000 * n / 24000.0))
+                       for n in range(2400)])
+    resampler = mx.Resampler()
+    out = array('h')
+    for start in range(0, len(tone), 480):            # 20 ms at a time
+        out.frombytes(resampler(tone[start:start + 480].tobytes()))
+    check('24 kHz mono becomes 48 kHz stereo, sample for sample',
+          len(out) == len(tone) * 4)
+    check('both ears carry the same mono signal',
+          out[0::2] == out[1::2])
+    left = out[0::2]
+    check('the tone keeps its amplitude',
+          abs(max(abs(v) for v in left) - 12000) < 200)
+    # A click at a chunk join shows up as a step far larger than the tone's.
+    check('chunk boundaries carry no click',
+          max(abs(left[i + 1] - left[i]) for i in range(len(left) - 1)) < 2000)
+
+    check('the mixer builds without audioop or numpy',
+          mx.Mixer(4.0, 6.0) is not None)
+finally:
+    mx._backend = had_backend
+
+# --------------------------- passthrough asks for no audio backend at all
+mx_backend = mx._backend
+mx._backend = None                       # the worst case: nothing available
+try:
+    raised = False
+    try:
+        mx.Mixer(4.0, 6.0)
+    except mx.AudioUnavailable:
+        raised = True
+    check('a mixer without any backend still refuses loudly', raised)
+
+    from PIIP.translate import engine as engine_mod                # noqa: E402
+    cfg = dict(engine_mod.DEFAULTS)
+    cfg.update({'url': 'http://example.invalid/x.ts', 'passthrough': True,
+                'translate': False})
+    built = None
+    try:
+        built = engine_mod.Engine(cfg)
+    except Exception as error:
+        print('   passthrough engine raised: %s' % error)
+    check('passthrough builds an engine with no audio backend present',
+          built is not None and built.mixer is None)
+finally:
+    mx._backend = mx_backend
+
 print('\n%d checks, %d failed' % (len(RUN), len(FAIL)))
 sys.exit(1 if FAIL else 0)

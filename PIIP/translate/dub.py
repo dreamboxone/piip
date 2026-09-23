@@ -166,7 +166,9 @@ class DubPipeline(object):
         cfg.update({'translate': False, 'passthrough': True})
         self.source = EngineHandle(cfg)
         if not self.source.start():
-            self._log('source engine did not start')
+            self._log('source engine did not start: %s'
+                      % (self.source.failure() or 'no reason reported; see '
+                         '/tmp/piip_engine_stderr.log'))
             return False
         context = {
             'ffmpeg_path': self.ffmpeg,

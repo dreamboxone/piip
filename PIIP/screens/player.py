@@ -562,13 +562,20 @@ class FarsiPlayer(Screen):
         self._dub_buffer_set = False
         self._dub_track = None
         if not self.engine.start():
-            self.diagNote('engine failed to start')
+            reason = ''
+            try:
+                source = getattr(self.engine, 'source', None)
+                reason = source.failure() if source is not None else ''
+            except Exception:
+                reason = ''
+            self.diagNote('engine failed to start: %s' % (reason or 'unknown'))
             self['state'].setText(native('engine failed'))
             self.session.open(
                 MessageBox,
-                native('The translation engine did not start.\n\n'
-                'Check that ffmpeg exists on the receiver and see '
-                '/tmp/piip_engine.log for details.'),
+                native('The translation engine did not start.\n\n%s\n\n'
+                       'Check that ffmpeg exists on the receiver; the whole '
+                       'reason is in /tmp/piip_engine_stderr.log.'
+                       % (reason or 'No reason was reported.')),
                 MessageBox.TYPE_ERROR, timeout=10)
             return
         self.started_at = time.time()

@@ -30,6 +30,7 @@ except (ImportError, ValueError):        # imported standalone (tests)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ENGINE = os.path.join(HERE, 'engine.py')
+STDERR_LOG = '/tmp/piip_engine_stderr.log'
 
 
 def python_binary():
@@ -59,13 +60,41 @@ class EngineHandle(object):
     def start(self):
         self.stop()
         cmd = [python_binary(), ENGINE, '-']
-        quiet = devnull()
+        # Never discard the engine's stderr. An engine that dies during its
+        # own imports has not opened its log yet, so throwing stderr away
+        # left "source engine did not start" with an empty log beside it and
+        # nothing at all to go on.
         self.proc = subprocess.Popen(
-            cmd, stdin=subprocess.PIPE, stdout=quiet, stderr=quiet,
-            close_fds=True)
+            cmd, stdin=subprocess.PIPE, stdout=devnull(),
+            stderr=self._stderr(), close_fds=True)
         self.proc.stdin.write(json.dumps(self.cfg).encode('utf-8'))
         self.proc.stdin.close()
         return self.wait_ready()
+
+    @staticmethod
+    def _stderr():
+        try:
+            return open(STDERR_LOG, 'ab', 0)
+        except Exception:
+            return devnull()
+
+    def failure(self):
+        """What the engine last complained about, for the caller's log."""
+        try:
+            with open(STDERR_LOG, 'rb') as handle:
+                try:
+                    handle.seek(-2048, os.SEEK_END)
+                except Exception:
+                    pass
+                lines = handle.read().decode('utf-8', 'replace').splitlines()
+        except Exception:
+            return ''
+        for line in reversed(lines):
+            line = line.strip()
+            # The last line of a traceback names the error itself.
+            if line and not line.startswith(('File "', 'Traceback', '~', '^')):
+                return line[:300]
+        return ''
 
     def wait_ready(self, timeout=20.0):
         """Block until the engine's HTTP port answers, so playback can start."""
