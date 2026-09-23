@@ -321,6 +321,70 @@ def supports_gradient():
         return False
 
 
+_MULTICONTENT = []
+
+
+def _multicontent():
+    """What this image's list-template syntax accepts.
+
+    A TemplatedMultiContent template is evaluated as one expression, so a
+    single argument the image does not know makes the whole list render
+    empty while the rest of the screen looks fine. Older images have no
+    MultiContentTemplateColor, and their pixmap entry takes no scale_flags.
+    """
+    if _MULTICONTENT:
+        return _MULTICONTENT[0]
+    result = _probe_multicontent()
+    _MULTICONTENT.append(result)
+    try:
+        from .uisafe import note
+        note('skin', 'list templates: colour=%s scaling=%s'
+             % ('yes' if result[0] else 'no', result[1] or 'none'))
+    except Exception:
+        pass
+    return result
+
+
+def _probe_multicontent():
+    color = False
+    scale = ''
+    try:
+        from Components import MultiContent
+    except Exception:
+        return color, scale
+    color = hasattr(MultiContent, 'MultiContentTemplateColor')
+    entry = getattr(MultiContent, 'MultiContentEntryPixmapAlphaTest', None)
+    names = ()
+    if entry is not None:
+        try:
+            import inspect
+            spec = getattr(inspect, 'getfullargspec', None) or inspect.getargspec
+            names = tuple(spec(entry).args or ())
+        except Exception:
+            names = ()
+    try:
+        import enigma
+    except Exception:
+        return color, scale
+    if 'scale_flags' in names and hasattr(enigma, 'SCALE_STRETCH'):
+        scale = ', scale_flags=__import__("enigma").SCALE_STRETCH'
+    elif 'flags' in names and hasattr(enigma, 'BT_SCALE'):
+        # What the same images used before scale_flags existed.
+        scale = ', flags=__import__("enigma").BT_SCALE'
+    return color, scale
+
+
+def template_color(colour):
+    """`color=...` for a template entry, or nothing where it is unknown."""
+    return (', color=MultiContentTemplateColor("%s")' % colour
+            if _multicontent()[0] else '')
+
+
+def template_scale():
+    """The argument that stretches a template pixmap into its box."""
+    return _multicontent()[1]
+
+
 def skin_factor():
     """Scale from the 1920 design grid to this desktop (720p/1080p/UHD)."""
     width = desktop_width()

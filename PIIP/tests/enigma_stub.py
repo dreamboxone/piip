@@ -506,6 +506,20 @@ class PluginDescriptor(object):
 
 # ------------------------------------------------------------- installer
 
+def multi_content_entry(pos=None, size=None, font=0, flags=0, text=0,
+                        color=None, color_sel=None, backcolor=None,
+                        backcolor_sel=None, border_width=None,
+                        border_color=None):
+    """The signature a current image's MultiContentEntryText carries."""
+    return (pos, size, font, flags, text, color)
+
+
+def multi_content_pixmap(pos=None, size=None, png=None, backcolor=None,
+                         backcolor_sel=None, flags=None, scale_flags=None):
+    """Its pixmap entry, with the scale_flags older images do not have."""
+    return (pos, size, png, flags, scale_flags)
+
+
 def _module(name, **attrs):
     mod = types.ModuleType(name)
     for key, value in attrs.items():
@@ -520,8 +534,12 @@ def install():
                                            '_farsi_stub', False):
         return
 
+    # SCALE_STRETCH and the MultiContent helpers below model a current
+    # image. Older receivers have neither, which the skin code detects and
+    # works around; test_image_compat.py covers that path.
     _module('enigma', eTimer=eTimer, eServiceReference=eServiceReference,
-            eDVBDB=eDVBDB, getDesktop=getDesktop, _farsi_stub=True)
+            eDVBDB=eDVBDB, getDesktop=getDesktop, SCALE_STRETCH=1,
+            BT_SCALE=2, _farsi_stub=True)
 
     for pkg in ('Components', 'Screens', 'Plugins', 'Tools'):
         m = _module(pkg)
@@ -545,6 +563,10 @@ def install():
             getConfigListEntry=getConfigListEntry)
     _module('Tools.LoadPixmap',
             LoadPixmap=lambda path, *a, **kw: path)
+    _module('Components.MultiContent',
+            MultiContentEntryText=multi_content_entry,
+            MultiContentEntryPixmapAlphaTest=multi_content_pixmap,
+            MultiContentTemplateColor=lambda colour: colour)
     _module('Screens.Screen', Screen=Screen)
     _module('Screens.MessageBox', MessageBox=MessageBox)
     _module('Plugins.Plugin', PluginDescriptor=PluginDescriptor)

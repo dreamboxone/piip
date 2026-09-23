@@ -136,5 +136,82 @@ check('no size is invented when the widget has none',
       backdrop.pixmap('/icons/bg.png') == 'sized:/icons/bg.png' and
       'size' not in calls[0])
 
+# --------------------------------- an image with an older MultiContent,
+# ------------------------------------ where one unknown argument in a
+# ------------------------------------ template empties the whole list
+import types                                                   # noqa: E402
+
+from PIIP.utils import skin as sk                              # noqa: E402
+from PIIP.screens import m3ugroups                             # noqa: E402
+
+del sk._MULTICONTENT[:]
+modern = sk._multicontent()
+check('a current image gets the colour and the stretch',
+      modern[0] and 'SCALE_STRETCH' in modern[1])
+check('the stretch is resolved inside the converter namespace',
+      '__import__("enigma")' in modern[1])
+
+current = sys.modules['Components.MultiContent']
+enigma = sys.modules['enigma']
+
+
+def older_image(pixmap, colour, stretch):
+    """Stand in an image whose MultiContent is missing these."""
+    module = types.ModuleType('Components.MultiContent')
+    module.MultiContentEntryText = current.MultiContentEntryText
+    if pixmap == 'flags':
+        def entry(pos=None, size=None, png=None, flags=None):
+            return (pos, size, png, flags)
+    elif pixmap == 'none':
+        def entry(pos=None, size=None, png=None):
+            return (pos, size, png)
+    else:
+        entry = current.MultiContentEntryPixmapAlphaTest
+    module.MultiContentEntryPixmapAlphaTest = entry
+    if colour:
+        module.MultiContentTemplateColor = current.MultiContentTemplateColor
+    sys.modules['Components.MultiContent'] = module
+    del sk._MULTICONTENT[:]                  # the probe result is cached
+    if stretch:
+        enigma.SCALE_STRETCH = 1
+    elif hasattr(enigma, 'SCALE_STRETCH'):
+        del enigma.SCALE_STRETCH
+
+
+try:
+    older_image('flags', colour=False, stretch=False)
+    old = sk._multicontent()
+    check('no colour argument is written where the helper is missing',
+          old[0] is False and sk.template_color('white') == '')
+    check('an older pixmap entry falls back to the flags it does have',
+          'BT_SCALE' in old[1])
+
+    older_image('none', colour=False, stretch=False)
+    check('a pixmap entry with neither takes no scaling argument',
+          sk.template_scale() == '')
+
+    # The template is only built where the image has a List source, which
+    # every receiver has and the stub does not.
+    had_source = m3ugroups.E2ListSource
+    m3ugroups.E2ListSource = type('ListSource', (object,), {})
+    try:
+        xml = m3ugroups.folder_list_skin(
+            'X', 'T', buttons=[('BACK', sk.BTN_RED)], hint='',
+            backdrop='bg_m3u.png')
+    finally:
+        m3ugroups.E2ListSource = had_source
+    check('the list becomes a templated listbox on a real receiver',
+          'render="Listbox"' in xml and 'TemplatedMultiContent' in xml)
+    check('the category list template carries nothing the image refuses',
+          'MultiContentTemplateColor' not in xml and
+          'scale_flags' not in xml and 'SCALE_STRETCH' not in xml)
+    check('and still draws the folder, the name and the count',
+          'MultiContentEntryPixmapAlphaTest' in xml and
+          xml.count('MultiContentEntryText') == 2)
+finally:
+    sys.modules['Components.MultiContent'] = current
+    enigma.SCALE_STRETCH = 1
+    del sk._MULTICONTENT[:]
+
 print('\n%d checks, %d failed' % (len(RUN), len(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -65,22 +65,21 @@ def folder_list_skin(name, title, buttons, hint, backdrop):
     f = (2560 if width >= 2560 else (1920 if width >= 1920 else 1280)) / 1920.0
     q = lambda value: int(round(value * f))
     row_h, list_w = q(70), q(1100)          # the 'center' list width
-    # The same template shape and pixmap entry the poster grid already
-    # runs on the receiver, so no converter feature beyond it is assumed.
+    # Anything the image does not know here empties the whole list, so the
+    # scaling and colour arguments are only written where they exist.
     template = (
         '{"templates": {"default": (%d, [\n'
-        '  MultiContentEntryPixmapAlphaTest(pos=(%d,%d), size=(%d,%d), png=2, '
-        'scale_flags=__import__("enigma").SCALE_STRETCH),\n'
+        '  MultiContentEntryPixmapAlphaTest(pos=(%d,%d), size=(%d,%d), '
+        'png=2%s),\n'
         '  MultiContentEntryText(pos=(%d,0), size=(%d,%d), font=0, '
         'flags=RT_HALIGN_LEFT|RT_VALIGN_CENTER, text=0),\n'
         '  MultiContentEntryText(pos=(%d,0), size=(%d,%d), font=1, '
-        'flags=RT_HALIGN_RIGHT|RT_VALIGN_CENTER, text=1, '
-        'color=MultiContentTemplateColor("%s"))\n'
+        'flags=RT_HALIGN_RIGHT|RT_VALIGN_CENTER, text=1%s)\n'
         '])}, "fonts": [gFont("Regular",%d), gFont("Regular",%d)], '
         '"itemHeight": %d}'
-        % (row_h, q(14), q(11), q(48), q(48),
+        % (row_h, q(14), q(11), q(48), q(48), sk.template_scale(),
            q(80), list_w - q(260), row_h,
-           list_w - q(180), q(160), row_h, sk.TEXT_DIM,
+           list_w - q(180), q(160), row_h, sk.template_color(sk.TEXT_DIM),
            q(28), q(24), row_h))
 
     def listbox(match):

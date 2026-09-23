@@ -83,14 +83,16 @@ def build_grid_skin(title='PIIP'):
     badge_x, badge_y, badge_w, badge_h = q(181), q(20), q(58), q(48)
     template = '''{
       "templates": {"default": (%d, [
-        MultiContentEntryText(pos=(%d,%d), size=(%d,%d), flags=RT_HALIGN_CENTER|RT_VALIGN_CENTER|RT_WRAP, text=0, color=MultiContentTemplateColor("white")),
-        MultiContentEntryPixmapAlphaTest(pos=(%d,%d), size=(%d,%d), png=8, scale_flags=__import__("enigma").SCALE_STRETCH),
-        MultiContentEntryPixmapAlphaTest(pos=(%d,%d), size=(%d,%d), png=9, scale_flags=__import__("enigma").SCALE_STRETCH)
+        MultiContentEntryText(pos=(%d,%d), size=(%d,%d), flags=RT_HALIGN_CENTER|RT_VALIGN_CENTER|RT_WRAP, text=0%s),
+        MultiContentEntryPixmapAlphaTest(pos=(%d,%d), size=(%d,%d), png=8%s),
+        MultiContentEntryPixmapAlphaTest(pos=(%d,%d), size=(%d,%d), png=9%s)
       ])},
       "fonts": [gFont("Regular",%d)], "itemHeight": %d, "itemWidth": %d
     }''' % (item_h, q(3), title_y, q(240), title_h,
-             poster_x, poster_y, poster_w, poster_h,
-             badge_x, badge_y, badge_w, badge_h, q(22), item_h, item_w)
+             sk.template_color('white'),
+             poster_x, poster_y, poster_w, poster_h, sk.template_scale(),
+             badge_x, badge_y, badge_w, badge_h, sk.template_scale(),
+             q(22), item_h, item_w)
     body = [
         '<widget name="bg" scale="stretch" position="0,0" size="%d,%d" zPosition="0"/>' % (W, H),
         '<eLabel position="0,0" size="%d,%d" backgroundColor="#95000000" zPosition="-1"/>' % (W, H),
