@@ -28,16 +28,42 @@ def cache_path(url, directory, extension='.jpg'):
     return os.path.join(directory, name)
 
 
+# Enigma2 refuses a picture by its extension before it looks inside, and
+# it has no WebP loader at all: "Neither .png nor .jpg nor .svg, please fix
+# file extension".
+DRAWABLE = ('.png', '.jpg', '.svg')
+
+
+def sniff(data):
+    """The extension for what these bytes actually are, or None if useless."""
+    head = data[:16]
+    if head.startswith(b'\x89PNG\r\n\x1a\n'):
+        return '.png'
+    if head.startswith(b'\xff\xd8\xff'):
+        return '.jpg'
+    if head.startswith(b'RIFF') and head[8:12] == b'WEBP':
+        return None                                  # nothing can draw it
+    stripped = head.lstrip()
+    if stripped[:4] == b'<svg' or stripped[:5] == b'<?xml':
+        return '.svg'
+    return None
+
+
+def suffix(url):
+    """The extension a cached copy of this address would have."""
+    ext = os.path.splitext(url.split('?', 1)[0])[1].lower()
+    if ext == '.jpeg':
+        return '.jpg'
+    return ext if ext in DRAWABLE else '.jpg'
+
+
 def download(url, directory, base='', timeout=20):
     url = resolve(url, base)
     if not url:
         return ''
     if not os.path.isdir(directory):
         os.makedirs(directory)
-    ext = os.path.splitext(url.split('?', 1)[0])[1].lower()
-    if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
-        ext = '.jpg'
-    target = cache_path(url, directory, ext)
+    target = cache_path(url, directory, suffix(url))
     if os.path.exists(target) and os.path.getsize(target) > 32:
         return target
     req = Request(url, headers={'User-Agent': UA})
@@ -48,6 +74,13 @@ def download(url, directory, base='', timeout=20):
         handle.close()
     if len(data) < 32:
         return ''
+    # What it really is, not what the address claimed: providers serve PNG
+    # from .jpg addresses, and WebP from both. Enigma2 draws neither WebP
+    # nor anything whose extension disagrees with its content.
+    kind = sniff(data)
+    if kind is None:
+        return ''
+    target = cache_path(url, directory, kind)
     temp = target + '.tmp'
     with open(temp, 'wb') as output:
         output.write(data)

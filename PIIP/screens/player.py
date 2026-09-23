@@ -391,6 +391,18 @@ class FarsiPlayer(Screen):
             self.retry_timer.callback.append(safe_callback(self, self._retryStream))
         except AttributeError:
             self.retry_conn = self.retry_timer.timeout.connect(safe_callback(self, self._retryStream))
+        # onLayoutFinish still runs inside the screen's construction, and a
+        # dialog opened there is refused outright: "Modal open are allowed
+        # only from a screen which is modal". That killed the whole player
+        # screen and left a black picture, so dialogs wait one tick.
+        self._deferred = []
+        self.defer_timer = eTimer()
+        try:
+            self.defer_timer.callback.append(
+                safe_callback(self, self._runDeferred))
+        except AttributeError:
+            self.defer_conn = self.defer_timer.timeout.connect(
+                safe_callback(self, self._runDeferred))
         self.osd_timer = eTimer()
         try:
             self.osd_timer.callback.append(safe_callback(self, self.hideOSD))
@@ -502,14 +514,30 @@ class FarsiPlayer(Screen):
 
     # ------------------------------------------------------------ lifecycle
 
+    def deferDialog(self, opener):
+        """Open a dialog on the next main-loop tick, never during layout."""
+        self._deferred.append(opener)
+        self.defer_timer.start(1, True)
+
+    def _runDeferred(self):
+        pending, self._deferred = self._deferred, []
+        for opener in pending:
+            try:
+                opener()
+            except Exception as exc:
+                self.diagNote('dialog refused: %s' % exc)
+
+    def _askResume(self, saved):
+        self.session.openWithCallback(
+            self.resumeAnswer, MessageBox,
+            native('Resume from %s?' % human_duration(saved)),
+            MessageBox.TYPE_YESNO, timeout=15, default=True)
+
     def begin(self):
         self.updateBars()
         saved = resume_store.get(self.item) if self.seekable else 0
         if saved > 0 and self.start_at <= 0:
-            self.session.openWithCallback(
-                self.resumeAnswer, MessageBox,
-                native('Resume from %s?' % human_duration(saved)),
-                MessageBox.TYPE_YESNO, timeout=15, default=True)
+            self.deferDialog(lambda: self._askResume(saved))
         else:
             self.start()
 
@@ -570,13 +598,12 @@ class FarsiPlayer(Screen):
                 reason = ''
             self.diagNote('engine failed to start: %s' % (reason or 'unknown'))
             self['state'].setText(native('engine failed'))
-            self.session.open(
-                MessageBox,
-                native('The translation engine did not start.\n\n%s\n\n'
-                       'Check that ffmpeg exists on the receiver; the whole '
-                       'reason is in /tmp/piip_engine_stderr.log.'
-                       % (reason or 'No reason was reported.')),
-                MessageBox.TYPE_ERROR, timeout=10)
+            text = native('The translation engine did not start.\n\n%s\n\n'
+                          'Check that ffmpeg exists on the receiver; the '
+                          'whole reason is in /tmp/piip_engine_stderr.log.'
+                          % (reason or 'No reason was reported.'))
+            self.deferDialog(lambda: self.session.open(
+                MessageBox, text, MessageBox.TYPE_ERROR, timeout=10))
             return
         self.started_at = time.time()
         if getattr(self.engine, 'helper_state', None) is not None:
@@ -669,7 +696,8 @@ class FarsiPlayer(Screen):
         except Exception:
             pass
         self.art_task.stop()
-        for t in (self.poll, self.subtimer, self.retry_timer, self.osd_timer):
+        for t in (self.poll, self.subtimer, self.retry_timer, self.osd_timer,
+                  self.defer_timer):
             try:
                 t.stop()
             except Exception:

@@ -139,31 +139,47 @@ class FarsiCategories(Screen):
             self.task.start()
 
     def _loadWorker(self):
-        """Runs on a worker thread: must not touch a widget or a timer."""
-        self.error, self.notice = None, ''
-        if self.paged:
+        """Runs on a worker thread: must not touch a widget or a timer.
+
+        Every value it needs is read once, here, before the first slow call.
+        Closing a screen on some images clears its attributes outright, and
+        a fetch already in flight then died on self.kind instead of
+        finishing -- which left the list empty.
+        """
+        kind, source, paged = self.kind, self.source, self.paged
+        syncing, adult = self.syncing, _c.show_adult.value
+        error = notice = ''
+        result = ([], {}, [], {})
+        if paged:
             try:
-                rows, ids, providers = catalogue.fetch_categories(self.kind)
+                rows, ids, providers = catalogue.fetch_categories(kind)
+                result = ([], providers, rows, ids)
             except Exception as exc:
-                self.error = catalogue.error_text(exc)
-                return [], {}, [], {}
-            return [], providers, rows, ids
+                error = catalogue.error_text(exc)
+        else:
+            try:
+                items, providers = catalogue.fetch(kind, source)
+                saved = catalogue.save(kind, items)
+                if syncing:
+                    notice = ('Database Sync Successful!' if saved
+                              else 'Sync Error: nothing to save')
+            except Exception as exc:
+                items, providers = catalogue.load_saved(kind), {}
+                if items:
+                    notice = ('Offline catalogue (%s)'
+                              % catalogue.error_text(exc))
+                else:
+                    error = catalogue.error_text(exc)
+                    if syncing:
+                        error = 'Sync Error: %s' % error
+            items = allowed(items or [], adult)
+            result = (items, providers, category_rows(kind, items), {})
+        # Back onto the screen only at the end, and only if it is still there.
         try:
-            items, providers = catalogue.fetch(self.kind, self.source)
-            saved = catalogue.save(self.kind, items)
-            if self.syncing:
-                self.notice = ('Database Sync Successful!' if saved
-                               else 'Sync Error: nothing to save')
-        except Exception as exc:
-            items, providers = catalogue.load_saved(self.kind), {}
-            if items:
-                self.notice = 'Offline catalogue (%s)' % catalogue.error_text(exc)
-            else:
-                self.error = catalogue.error_text(exc)
-                if self.syncing:
-                    self.error = 'Sync Error: %s' % self.error
-        items = allowed(items or [], _c.show_adult.value)
-        return items, providers, category_rows(self.kind, items), {}
+            self.error, self.notice = error or None, notice
+        except Exception:
+            pass
+        return result
 
     def _loaded(self, result, error):
         syncing, self.syncing = self.syncing, False

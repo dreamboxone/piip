@@ -62,6 +62,47 @@ LEFTOVER_MARKERS = ('e2dub_relay.py', 'e2dub_http.py', 'e2dub_audio_helper.py',
                     '127.0.0.1:%d' % LIVE_TS_UDP_PORT)
 
 
+def image_id():
+    """The distribution id from /etc/os-release, lower case, or ''."""
+    try:
+        with open('/etc/os-release') as handle:
+            for line in handle:
+                if line.startswith('ID='):
+                    value = line.split('=', 1)[1].strip()
+                    return value.strip(chr(34) + chr(39)).lower()
+    except Exception:
+        pass
+    return ''
+
+
+def is_oe_alliance():
+    """Whether this is an OE-Alliance image rather than DreamOS.
+
+    The two need different FFmpeg output graphs: DreamOS takes two audio
+    tracks and lets Enigma2 switch between them, while an OE-Alliance image
+    rejects that command line outright -- "Error initializing the muxer" --
+    and wants the single mixed AAC track instead.
+
+    The package manager is the honest signal, but only its database: a
+    DreamOS box can carry a stray /usr/bin/opkg while managing everything
+    with dpkg, and that alone had this answering the wrong way round.
+    """
+    name = image_id()
+    if 'dream' in name:                                  # opendreambox, dreamos
+        return False
+    for marker in ('/var/lib/opkg/status', '/etc/opkg'):
+        if os.path.exists(marker):
+            return True
+    if os.path.exists('/var/lib/dpkg/status'):
+        return False
+    try:
+        import boxbranding                              # OE-Alliance only
+        return bool(boxbranding.getImageDistro())
+    except Exception:
+        pass
+    return False
+
+
 def _python():
     for candidate in ('/usr/bin/python', '/usr/bin/python2', '/usr/bin/python3'):
         if os.path.exists(candidate):
@@ -196,7 +237,7 @@ class DubPipeline(object):
             'local_onid': 1,
             'translated_audio_pid': TRANSLATED_PID,
             'original_audio_pid': ORIGINAL_PID,
-            'is_oe_alliance': False,
+            'is_oe_alliance': is_oe_alliance(),
         }
         self.engine = AudioEngine({'spawn': self._spawn, 'log': self._log})
         self.engine.start(context)

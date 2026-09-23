@@ -290,5 +290,66 @@ try:
 finally:
     mx._backend = mx_backend
 
+# ----------------------------- artwork the image cannot draw, and posters
+# ------------------------------- whose address lies about their format
+from PIIP.utils import image as image_cache                    # noqa: E402
+
+png = b'\x89PNG\r\n\x1a\n' + b'0' * 32
+jpeg = b'\xff\xd8\xff\xe0' + b'0' * 32
+webp = b'RIFF' + b'0000' + b'WEBP' + b'0' * 32
+
+check('a PNG is recognised whatever it was called',
+      image_cache.sniff(png) == '.png')
+check('a JPEG is recognised', image_cache.sniff(jpeg) == '.jpg')
+check('a WebP poster is refused rather than cached undrawable',
+      image_cache.sniff(webp) is None)
+check('an SVG is recognised', image_cache.sniff(b'<svg xmlns=...') == '.svg')
+check('rubbish is refused', image_cache.sniff(b'not a picture at all') is None)
+check('an address with no usable extension still names a jpg',
+      image_cache.suffix('http://x/poster') == '.jpg' and
+      image_cache.suffix('http://x/a.webp') == '.jpg')
+check('.jpeg and .jpg name the same file',
+      image_cache.suffix('http://x/a.jpeg') == '.jpg')
+check('a png address keeps its own name',
+      image_cache.suffix('http://x/a.png?v=2') == '.png')
+
+# --------------------------- which FFmpeg output graph this image wants
+from PIIP.translate import dub                                 # noqa: E402
+
+real_exists, real_id = os.path.exists, dub.image_id
+
+
+def pretend(paths, distro=''):
+    present = set(paths)
+    os.path.exists = lambda path: path in present or real_exists(path)
+    dub.image_id = lambda: distro
+
+
+try:
+    # The receiver this was found on: dpkg everywhere, plus a stray opkg
+    # binary left in /usr/bin, which is not a package database.
+    pretend(['/usr/bin/opkg', '/var/lib/dpkg/status'], 'opendreambox')
+    check('a DreamOS box with a stray opkg binary is still DreamOS',
+          dub.is_oe_alliance() is False)
+
+    pretend(['/var/lib/dpkg/status'], 'opendreambox')
+    check('DreamOS is recognised by its own name',
+          dub.is_oe_alliance() is False)
+
+    pretend(['/var/lib/opkg/status', '/etc/opkg', '/usr/bin/opkg'], 'openatv')
+    check('an OE-Alliance image is recognised by its package database',
+          dub.is_oe_alliance() is True)
+
+    pretend(['/etc/opkg'], '')
+    check('the opkg configuration alone is enough',
+          dub.is_oe_alliance() is True)
+
+    pretend([], '')
+    check('nothing recognisable falls back to the proven DreamOS graph',
+          dub.is_oe_alliance() is False)
+finally:
+    os.path.exists = real_exists
+    dub.image_id = real_id
+
 print('\n%d checks, %d failed' % (len(RUN), len(FAIL)))
 sys.exit(1 if FAIL else 0)

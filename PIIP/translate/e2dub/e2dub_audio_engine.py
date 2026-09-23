@@ -278,6 +278,10 @@ class AudioEngine(EngineProcesses):
             latency_sensitive=True,
         )
         self.playback_process.stdout.close()
+        # The command itself, because when FFmpeg refuses one of these
+        # options the message alone -- "Error initializing the muxer" --
+        # does not say which, and the graph differs per image.
+        r["log"]("playback: %s" % " ".join(playback_args))
         r["log"](
             "AudioEngine started: base RAM delay=%.2fs (adaptive startup), dub correction=%+.2fs, "
             "receiver_audio=%s http_pacing=%s source=%s" %

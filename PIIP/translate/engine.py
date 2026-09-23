@@ -960,16 +960,22 @@ class Engine(object):
                 'flowing': bool(self.audio_started and self.video_started),
                 'client': self.client is not None,
                 'gemini': self.stats.get('gemini_state'),
-                'backlog': round(m.translated.backlog_seconds(), 2),
-                'tempo': round(m.translated.speed, 4),
-                'dropped_ms': int(m.translated.dropped_bytes * 1000 / mx.OUT_BPS),
-                'underruns': m.translated.underruns,
-                'orig_gain': round(m.active_original_gain, 3),
-                'orig_pending_s': round(m.original.pending() / float(mx.OUT_BPS), 2),
                 'video_held_kb': self.video.bytes_held // 1024,
                 'clock_late_max_ms': self.clock_late_max_ms,
                 'mix_ticks': ticks,
             }
+            if m is not None:
+                # Passthrough mixes nothing and has no mixer to measure.
+                rec.update({
+                    'backlog': round(m.translated.backlog_seconds(), 2),
+                    'tempo': round(m.translated.speed, 4),
+                    'dropped_ms': int(
+                        m.translated.dropped_bytes * 1000 / mx.OUT_BPS),
+                    'underruns': m.translated.underruns,
+                    'orig_gain': round(m.active_original_gain, 3),
+                    'orig_pending_s': round(
+                        m.original.pending() / float(mx.OUT_BPS), 2),
+                })
             self.clock_late_max_ms = 0
             if ticks:
                 rec['present_ms'] = counts.get('present_ticks', 0) * CHUNK_MS

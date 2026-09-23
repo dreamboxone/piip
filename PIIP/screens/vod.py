@@ -507,11 +507,13 @@ class LoadingScreen(Screen):
         if os.path.isfile(url):
             return url
         directory = native(_c.picon_cache_dir.value or '/tmp/piip-cache')
-        ext = os.path.splitext(url.split('?', 1)[0])[1].lower()
-        if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
-            ext = '.jpg'
-        path = image_cache.cache_path(url, directory, ext)
-        return path if os.path.isfile(path) else ''
+        for ext in (image_cache.suffix(url), '.png', '.jpg'):
+            # The download names the file after what arrived, so a .jpg
+            # address that served a PNG is cached as .png.
+            path = image_cache.cache_path(url, directory, ext)
+            if os.path.isfile(path):
+                return path
+        return ''
 
     def _pageArtNeeded(self, shown):
         return any(getattr(item, 'logo', '') and
