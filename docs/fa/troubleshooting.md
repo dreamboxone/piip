@@ -139,6 +139,7 @@ grep "Audio flow" /tmp/piip_dub.log | tail -5
 |---|---|
 | `/tmp/piip_dub.log` | ترجمه: اتصال، زمان‌بندی، عقب‌افتادگی، بافرها |
 | `/tmp/piip_engine.log` | استریم منبع: کانال، ffmpeg، ری‌استارت‌ها |
+| `/tmp/piip_engine_stderr.log` | دلیل مرگ موتور، وقتی پیش از باز کردن لاگ خودش مرده |
 | `/tmp/piip_resolver.log` | تبدیل کانال بوکه به استریم |
 | `/tmp/piip_ui.log` | صفحه‌ها |
 

@@ -134,6 +134,7 @@ All logs are in `/tmp`, so they are cleared at every reboot.
 |---|---|
 | `/tmp/piip_dub.log` | Translation: connection, timing, drift, buffers |
 | `/tmp/piip_engine.log` | The source stream: the channel, ffmpeg, restarts |
+| `/tmp/piip_engine_stderr.log` | Why the engine died, when it died before opening its own log |
 | `/tmp/piip_resolver.log` | Bouquet channel resolution |
 | `/tmp/piip_ui.log` | The screens |
 

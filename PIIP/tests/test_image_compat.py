@@ -218,19 +218,29 @@ finally:
 import math                                                    # noqa: E402
 from array import array                                        # noqa: E402
 
+
+def raw(values):
+    """array -> bytes, on both Pythons."""
+    block = array('h', values)
+    return (getattr(block, 'tobytes', None) or block.tostring)()
+
+
+def samples(data):
+    block = array('h')
+    (getattr(block, 'frombytes', None) or block.fromstring)(data)
+    return block
+
 from PIIP.translate import mixer as mx                          # noqa: E402
 
 had_backend = mx._backend
 mx._backend = 'python'
 try:
     check('a gain halves the samples',
-          array('h', mx.scale(array('h', [1000, -1000]).tobytes(), 0.5))
-          .tolist() == [500, -500])
+          samples(mx.scale(raw([1000, -1000]), 0.5)).tolist() == [500, -500])
     check('a sum stops at the ceiling instead of wrapping',
-          array('h', mx.add(array('h', [30000]).tobytes(),
-                            array('h', [30000]).tobytes())).tolist() == [32767])
+          samples(mx.add(raw([30000]), raw([30000]))).tolist() == [32767])
     check('the level of a flat signal is the signal',
-          mx.rms(array('h', [1000] * 100).tobytes()) == 1000)
+          mx.rms(raw([1000] * 100)) == 1000)
     check('silence has no level', mx.rms(b'') == 0)
 
     tone = array('h', [int(12000 * math.sin(2 * math.pi * 1000 * n / 24000.0))
@@ -238,7 +248,7 @@ try:
     resampler = mx.Resampler()
     out = array('h')
     for start in range(0, len(tone), 480):            # 20 ms at a time
-        out.frombytes(resampler(tone[start:start + 480].tobytes()))
+        out.extend(samples(resampler(raw(tone[start:start + 480]))))
     check('24 kHz mono becomes 48 kHz stereo, sample for sample',
           len(out) == len(tone) * 4)
     check('both ears carry the same mono signal',

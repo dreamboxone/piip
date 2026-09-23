@@ -525,6 +525,12 @@ def _module(name, **attrs):
     for key, value in attrs.items():
         setattr(mod, key, value)
     sys.modules[name] = mod
+    # Python 2.7's "from package import submodule" reads the attribute and
+    # never consults sys.modules, unlike 3.7 and later.
+    if '.' in name:
+        parent, child = name.rsplit('.', 1)
+        if parent in sys.modules:
+            setattr(sys.modules[parent], child, mod)
     return mod
 
 

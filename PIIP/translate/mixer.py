@@ -59,7 +59,9 @@ def _require_backend():
 
 def _samples(pcm):
     out = array.array('h')
-    out.frombytes(pcm[:len(pcm) - len(pcm) % 2])
+    # Python 2.7 spells these fromstring/tostring; the receivers still run it.
+    load = getattr(out, 'frombytes', None) or out.fromstring
+    load(pcm[:len(pcm) - len(pcm) % 2])
     if sys.byteorder != 'little':
         out.byteswap()
     return out
@@ -69,7 +71,8 @@ def _pcm(samples):
     if sys.byteorder != 'little':
         samples = array.array('h', samples)
         samples.byteswap()
-    return samples.tobytes()
+    dump = getattr(samples, 'tobytes', None) or samples.tostring
+    return dump()
 
 
 def _clamped(values):

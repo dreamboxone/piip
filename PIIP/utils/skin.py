@@ -349,7 +349,9 @@ def _probe_multicontent():
     color = False
     scale = ''
     try:
-        from Components import MultiContent
+        __import__('Components.MultiContent')
+        import sys as _sys
+        MultiContent = _sys.modules['Components.MultiContent']
     except Exception:
         return color, scale
     color = hasattr(MultiContent, 'MultiContentTemplateColor')
