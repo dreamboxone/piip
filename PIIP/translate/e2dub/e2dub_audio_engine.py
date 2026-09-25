@@ -61,17 +61,8 @@ class AudioEngine(EngineProcesses):
             dub_audio_stream = "1:a:0"
             args.extend([
                 "-thread_queue_size", "1024",
-                # The relay holds the picture back by the whole A/V delay, so
-                # for the first seconds this pipe carries PAT and PMT and no
-                # payload. FFmpeg would announce the streams, fail to learn
-                # their codecs, and hand the muxer a video stream with no
-                # parameters: "Error initializing the muxer ... Invalid
-                # argument", a dozen seconds before the first frame was due.
-                # It costs nothing on a healthy stream, which stops probing
-                # the moment it knows. -scan_all_pmts is left out for the
-                # reason build_capture_plan already gives.
-                "-probesize", "8000000", "-analyzeduration", "20000000",
-                "-f", "mpegts", "-i", "pipe:0",
+                "-probesize", "1000000", "-analyzeduration", "1000000",
+                "-scan_all_pmts", "1", "-f", "mpegts", "-i", "pipe:0",
                 "-thread_queue_size", "256", "-f", "s16le", "-ar", "24000",
                 "-ac", "1", "-channel_layout", "mono", "-i",
                 "udp://127.0.0.1:%d?fifo_size=128&overrun_nonfatal=1&buffer_size=32768" %
@@ -99,17 +90,8 @@ class AudioEngine(EngineProcesses):
                 # source DTS/PCR timeline to prevent FFmpeg running ahead.
                 "-re",
                 "-thread_queue_size", "1024",
-                # The relay holds the picture back by the whole A/V delay, so
-                # for the first seconds this pipe carries PAT and PMT and no
-                # payload. FFmpeg would announce the streams, fail to learn
-                # their codecs, and hand the muxer a video stream with no
-                # parameters: "Error initializing the muxer ... Invalid
-                # argument", a dozen seconds before the first frame was due.
-                # It costs nothing on a healthy stream, which stops probing
-                # the moment it knows. -scan_all_pmts is left out for the
-                # reason build_capture_plan already gives.
-                "-probesize", "8000000", "-analyzeduration", "20000000",
-                "-f", "mpegts", "-i", "pipe:0",
+                "-probesize", "1000000", "-analyzeduration", "1000000",
+                "-scan_all_pmts", "1", "-f", "mpegts", "-i", "pipe:0",
             ])
 
         original_level = original_volume / 100.0

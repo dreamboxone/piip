@@ -103,6 +103,49 @@ def is_oe_alliance():
     return False
 
 
+_MUXERS = {}
+
+
+def ffmpeg_muxers(ffmpeg='ffmpeg'):
+    """The output formats this FFmpeg build was compiled with."""
+    if ffmpeg in _MUXERS:
+        return _MUXERS[ffmpeg]
+    found = set()
+    try:
+        proc = subprocess.Popen([ffmpeg, '-hide_banner', '-muxers'],
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT)
+        text = proc.communicate()[0].decode('utf-8', 'replace')
+        for line in text.splitlines():
+            parts = line.split()
+            # " E  mpegts   MPEG-TS ..." -- flags, then the name(s).
+            if (len(parts) >= 2 and 'E' in parts[0] and
+                    parts[0].strip('DE.') == '' and parts[1] != '='):
+                found.update(parts[1].split(','))
+    except Exception:
+        pass
+    _MUXERS[ffmpeg] = found
+    return found
+
+
+def capture_backend(ffmpeg='ffmpeg'):
+    """How the channel's sound reaches the Gemini helper on this image.
+
+    Raw s16le is the simplest, but slim receiver builds leave that muxer
+    out: openATV's FFmpeg 8 has 27 muxers, s16le and wav not among them,
+    and the capture died at once with "Requested output format 's16le' is
+    not known". Nothing reached Gemini, the helper then saw its input
+    close, the mixer never got its second input, and no picture came out.
+    Matroska carrying the same PCM is there, and the helper unpacks it.
+    """
+    muxers = ffmpeg_muxers(ffmpeg)
+    if not muxers or 's16le' in muxers:
+        return {'mode': 'dreamos-raw-pcm'}
+    if 'matroska' in muxers:
+        return {'mode': 'ffmpeg-matroska-pcm'}
+    return {'mode': 'dreamos-raw-pcm'}
+
+
 def _python():
     for candidate in ('/usr/bin/python', '/usr/bin/python2', '/usr/bin/python3'):
         if os.path.exists(candidate):
@@ -219,7 +262,7 @@ class DubPipeline(object):
             'has_mix_limiter': True,
             'source_url': self.source.url,
             'audio_stream': '0:a:0',
-            'capture_backend': {'mode': 'dreamos-raw-pcm'},
+            'capture_backend': capture_backend(self.ffmpeg),
             'target_language': self.language,
             'original_volume': self.original_volume,
             'fixed_delay': FIXED_DELAY,
@@ -241,6 +284,7 @@ class DubPipeline(object):
             'original_audio_pid': ORIGINAL_PID,
             'is_oe_alliance': is_oe_alliance(),
         }
+        self._log('capture: %s' % context['capture_backend']['mode'])
         self.engine = AudioEngine({'spawn': self._spawn, 'log': self._log})
         self.engine.start(context)
         self.started_at = time.time()

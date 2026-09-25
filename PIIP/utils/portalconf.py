@@ -35,7 +35,7 @@ except ImportError:                                    # Python 2 images
 # Where a portal list is normally left on a receiver, plus our own.
 LOCAL_PATHS = ('/home/stalkerclient.conf',
                '/etc/enigma2/piip_portals.conf',
-               '/root/portals.conf')
+               '/root/portals.conf', '/home/root/portals.conf')
 
 MAC = re.compile(r'([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5})')
 URL = re.compile(r'(https?://[^\s,;|]+)', re.I)

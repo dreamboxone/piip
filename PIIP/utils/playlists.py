@@ -28,13 +28,15 @@ is used. Local file paths work as well as URLs.
 
 import os
 
-from .compat import native
+from .compat import in_root_homes, native, root_home
 
-STORE = '/root/m3u.txt'
+# Written in root's home on this image, which on OE-Alliance is /home/root:
+# asking for /root/m3u.txt there failed without a word, because /root does
+# not exist, and the list was never created at all.
+STORE = os.path.join(root_home(), 'm3u.txt')
 
 # Searched in order; the first file that exists wins.
-SEARCH_PATHS = (
-    STORE,
+SEARCH_PATHS = in_root_homes('m3u.txt') + (
     '/etc/enigma2/piip_m3u.txt',
     '/media/hdd/m3u.txt',
 )

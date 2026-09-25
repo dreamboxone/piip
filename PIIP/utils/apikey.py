@@ -16,7 +16,7 @@ The key is looked up in several places so that it can be dropped in as a
 plain file rather than typed on a remote control. First hit wins:
 
   1. the GEMINI_API_KEY environment variable
-  2. /root/apikey.txt                     (root's home on the receiver)
+  2. /root/apikey.txt or /home/root/apikey.txt (root's home: DreamOS or OE)
   3. /etc/enigma2/piip_apikey.txt    (survives plugin reinstalls)
   4. apikey.txt next to the plugin
   5. apikey.txt one level above the plugin
@@ -29,14 +29,13 @@ stripped, because copy-pasting a key into a file on Windows adds both.
 
 import os
 
-from .compat import native
+from .compat import in_root_homes, native
 
 ENV_VAR = 'GEMINI_API_KEY'
 
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SEARCH_PATHS = [
-    '/root/apikey.txt',
+SEARCH_PATHS = list(in_root_homes('apikey.txt')) + [
     '/etc/enigma2/piip_apikey.txt',
     os.path.join(_HERE, 'apikey.txt'),
     os.path.join(os.path.dirname(_HERE), 'apikey.txt'),

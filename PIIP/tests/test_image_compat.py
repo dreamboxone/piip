@@ -351,5 +351,52 @@ finally:
     os.path.exists = real_exists
     dub.image_id = real_id
 
+# ---------------------- an FFmpeg built without the raw PCM muxers, which
+# ------------------------- is what openATV 8 ships: 27 muxers in all
+OPENATV_MUXERS = """Formats:
+ D. = Demuxing supported
+ .E = Muxing supported
+ ---
+  E adts            ADTS AAC (Advanced Audio Coding)
+  E matroska        Matroska
+  E mpegts          MPEG-TS (MPEG-2 Transport Stream)
+"""
+FULL_MUXERS = OPENATV_MUXERS + """  E s16le           PCM signed 16-bit little-endian
+ DE wav             WAV / WAVE (Waveform Audio)
+"""
+
+
+class FakeProc(object):
+    def __init__(self, text):
+        self.text = text
+
+    def communicate(self):
+        return (self.text.encode('utf-8'), None)
+
+
+real_popen = dub.subprocess.Popen
+try:
+    dub._MUXERS.clear()
+    dub.subprocess.Popen = lambda *a, **k: FakeProc(OPENATV_MUXERS)
+    muxers = dub.ffmpeg_muxers('ffmpeg-openatv')
+    check('the muxer list is read from the build itself',
+          muxers == set(['adts', 'matroska', 'mpegts']), repr(sorted(muxers)))
+    check('the table header is not mistaken for a muxer', '=' not in muxers)
+    check('without s16le the capture carries its PCM in Matroska',
+          dub.capture_backend('ffmpeg-openatv')['mode'] == 'ffmpeg-matroska-pcm')
+
+    dub.subprocess.Popen = lambda *a, **k: FakeProc(FULL_MUXERS)
+    check('a full build keeps the raw PCM capture',
+          dub.capture_backend('ffmpeg-full')['mode'] == 'dreamos-raw-pcm')
+
+    def broken(*a, **k):
+        raise OSError('no ffmpeg')
+    dub.subprocess.Popen = broken
+    check('an FFmpeg that cannot be asked keeps the proven default',
+          dub.capture_backend('ffmpeg-missing')['mode'] == 'dreamos-raw-pcm')
+finally:
+    dub.subprocess.Popen = real_popen
+    dub._MUXERS.clear()
+
 print('\n%d checks, %d failed' % (len(RUN), len(FAIL)))
 sys.exit(1 if FAIL else 0)

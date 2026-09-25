@@ -90,6 +90,25 @@ def byte_values(data):
     return bytearray(data)
 
 
+# DreamOS keeps root's home at /root; OE-Alliance images put it at
+# /home/root and have no /root at all. A file looked for in only one of
+# them is simply never found on the other.
+ROOT_HOMES = ('/root', '/home/root')
+
+
+def root_home():
+    """The directory root's files belong in on this image."""
+    for path in ROOT_HOMES:
+        if os.path.isdir(path):
+            return path
+    return ROOT_HOMES[0]
+
+
+def in_root_homes(name):
+    """The same file name in every place root's home can be."""
+    return tuple(os.path.join(home, name) for home in ROOT_HOMES)
+
+
 def devnull():
     """subprocess.DEVNULL does not exist on Python 2."""
     handle = getattr(subprocess, 'DEVNULL', None)

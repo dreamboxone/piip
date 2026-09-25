@@ -58,7 +58,7 @@ class FarsiMain(CarouselScreen):
         ('Xtream Codes', 'xtream', 'xtream',
          'Host, username and password from your provider', 'bg_xtream.png'),
         ('M3U Playlist', 'm3u', 'm3u',
-         'A playlist URL, or the list in /root/m3u.txt', 'bg_m3u.png'),
+         'A playlist URL, or the list in m3u.txt', 'bg_m3u.png'),
         ('Stalker Portal', 'stalker', 'stalker',
          'A portal address and the MAC it is registered to',
          'bg_stalker.png'),

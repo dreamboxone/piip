@@ -32,7 +32,13 @@ HOST = "generativelanguage.googleapis.com"
 PORT = 443
 MODEL = "gemini-3.5-live-translate-preview"
 DEFAULT_KEY_FILE = "/root/apikey.txt"
-ALLOWED_KEY_FILES = (DEFAULT_KEY_FILE, "/home/root/apikey.txt")
+# PIIP resolves the key itself -- from either home, /etc/enigma2 or the
+# settings -- and hands it over in its own 0600 file. Refusing that path sent
+# the helper to /root/apikey.txt, which on an OE-Alliance image does not
+# exist because /root does not: it exited at once, no PCM reached the mixer,
+# and the viewer saw a black picture.
+ALLOWED_KEY_FILES = (DEFAULT_KEY_FILE, "/home/root/apikey.txt",
+                     "/tmp/piip_dub_apikey")
 STATE_FILE = "/tmp/e2dub-audio-helper-state"
 INPUT_STATE_FILE = "/tmp/e2dub-audio-input-state"
 INPUT_CHUNK_BYTES = 3200       # 100 ms, s16le mono, 16 kHz

@@ -76,7 +76,7 @@ def build_skin():
                      width=W, height=H, wide=True)
 
 HELP = {
-    'API key': 'Optional here: a key in /root/apikey.txt (or apikey.txt beside '
+    'API key': 'Optional here: a key in /root/apikey.txt or /home/root/apikey.txt (or apikey.txt beside '
                'the plugin) is used first. Without any key, channels still play '
                'but nothing is translated.',
     'Delay': 'How far the picture is held back so the translated speech can '

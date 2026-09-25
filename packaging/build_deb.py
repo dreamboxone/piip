@@ -33,7 +33,7 @@ SOURCE = os.path.join(ROOT, 'PIIP')
 RELEASE = os.path.join(ROOT, 'release', 'PIIP')
 
 PACKAGE = 'enigma2-plugin-extensions-piip'
-VERSION = '1.0.6'
+VERSION = '1.0.7'
 ARCH = 'all'
 INSTALL_DIR = 'usr/lib/enigma2/python/Plugins/Extensions/PIIP'
 
@@ -81,13 +81,17 @@ set -e
 echo ""
 echo ">>> PIIP installed.   (c) Routekernel"
 echo ""
-if [ ! -s /root/apikey.txt ]; then
-    echo "    NEXT: put your Gemini API key in /root/apikey.txt"
-    echo "          echo 'YOUR_KEY' > /root/apikey.txt && chmod 600 /root/apikey.txt"
+# Root's home is /root on DreamOS and /home/root on OE-Alliance images,
+# where /root does not exist at all.
+HOMEDIR=/root
+[ -d /root ] || HOMEDIR=/home/root
+if [ ! -s /root/apikey.txt ] && [ ! -s /home/root/apikey.txt ] && [ ! -s /etc/enigma2/piip_apikey.txt ]; then
+    echo "    NEXT: put your Gemini API key in $HOMEDIR/apikey.txt"
+    echo "          echo 'YOUR_KEY' > $HOMEDIR/apikey.txt && chmod 600 $HOMEDIR/apikey.txt"
     echo ""
 fi
-if [ ! -f /root/m3u.txt ]; then
-    echo "    Add your playlists to /root/m3u.txt (one per line)."
+if [ ! -f /root/m3u.txt ] && [ ! -f /home/root/m3u.txt ]; then
+    echo "    Add your playlists to $HOMEDIR/m3u.txt (one per line)."
     echo ""
 fi
 if ! command -v ffmpeg >/dev/null 2>&1; then
