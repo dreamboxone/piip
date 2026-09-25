@@ -79,13 +79,13 @@ def build_skin(name, chips=(), subtitle=False):
         '<widget name="dots" position="0,0" size="1,1" transparent="1"/>',
         '<widget name="status" position="0,0" size="1,1" transparent="1"/>',
         '<eLabel position="0,%d" size="%d,2" backgroundColor="%s" '
-        'zPosition="3"/>' % (q(960), W, sk.ACCENT),
+        'zPosition="3"/>' % (q(900), W, sk.ACCENT),
     ]
 
     # Three chips from the left, and the fourth against the right edge, as
     # the reference places its MENU chip.
-    cw, chh, cy = q(260), q(56), q(996)
-    chip_x = (40, 320, 600, 1640)
+    cw, chh, cy = q(260), q(56), q(930)
+    chip_x = (40, 320, 600, 1580)
     for index, (text, colour) in enumerate(chips):
         x = q(chip_x[index] if index < len(chip_x) else 40 + index * 280)
         # Outlined, as the reference draws its carousel chips: a

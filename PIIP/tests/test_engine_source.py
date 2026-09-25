@@ -37,6 +37,7 @@ SEPARATE = ('#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aud",URI="audio.m3u8"\n'
             '#EXT-X-STREAM-INF:BANDWIDTH=900000,AUDIO="aud"\nv.m3u8\n')
 check('renditions with separate audio keep the master', pick_variant(SEPARATE, 'http://h/') is None)
 from translate.engine import Engine
+from translate.e2dub.e2dub_audio_engine import AudioEngine
 import tempfile
 log = os.path.join(tempfile.gettempdir(), 'piip_engine_source_test.log')
 for url, hls in (('/media/hdd/film.ts', False), ('http://host/live/1.ts', False),
@@ -49,6 +50,26 @@ for url, hls in (('/media/hdd/film.ts', False), ('http://host/live/1.ts', False)
           ('-live_start_index' in args) == hls, ' '.join(args[:14]))
     check('%s: HTTP options only for HTTP' % url.split('/')[-1],
           ('-reconnect' in args) == url.startswith('http'))
+live = Engine({'url': 'http://host/live/index.m3u8', 'translate': False,
+               'passthrough': True, 'ingest_realtime': True, 'log': log})
+args = live._input_args()
+check('source pacing remains opt-in for recorded streams',
+      '-re' in args and args.index('-re') < args.index('-i'))
+context = {
+    'ffmpeg_path': 'ffmpeg', 'is_oe_alliance': True,
+    'audio_stream': '0:a:0', 'original_volume': 30,
+    'dub_udp_port': 19875, 'translated_audio_pid': 258,
+    'original_audio_pid': 257, 'target_language': 'fa',
+    'local_service_id': 1, 'local_tsid': 1, 'local_onid': 1,
+    'playback_realtime': True,
+}
+playback = AudioEngine({})._playback_args(context)
+check('OE translated TS is read at media rate',
+      playback.count('-re') == 1 and
+      playback.index('-re') < playback.index('pipe:0'))
+context['playback_realtime'] = False
+check('legacy OE playback keeps its original rate behavior',
+      '-re' not in AudioEngine({})._playback_args(context))
 print('')
 if FAIL:
     print('FAILED (%d): %s' % (len(FAIL), ', '.join(FAIL)))

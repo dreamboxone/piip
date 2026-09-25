@@ -86,6 +86,13 @@ def main(deb):
         text = ctar.extractfile(member).read().decode()
         check('%s has a shebang' % script, text.startswith('#!/bin/sh'),
               text[:20])
+        if script == 'postinst':
+            check('postinst creates M3U only when no supported list exists',
+                  'cat > "$HOMEDIR/m3u.txt"' in text
+                  and '[ ! -f /root/m3u.txt ]' in text
+                  and '[ ! -f /home/root/m3u.txt ]' in text
+                  and '[ ! -f /etc/enigma2/piip_m3u.txt ]' in text
+                  and '[ ! -f /media/hdd/m3u.txt ]' in text)
 
     control = ctar.extractfile('./control').read().decode()
     fields = {}

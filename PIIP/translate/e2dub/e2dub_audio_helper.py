@@ -57,19 +57,23 @@ AUDIO_INPUT_MAX_AGE_SECONDS = 0.8
 INPUT_SILENCE_GATE = True
 INPUT_PREROLL_FRAMES = 3       # 300 ms kept before speech, for weak onsets
 INPUT_HANGOVER_SECONDS = 0.8   # keep sending after speech ends, for tails
-# On dense speech Live Translate renders roughly two thirds of real time, so
-# its backlog -- and the distance between the Persian and the picture -- grows
-# for as long as the channel is fed. Nothing in the protocol reports it, and
-# the model's own phrasing pauses say nothing about it, so it is measured:
-# every FEED_WINDOW_SECONDS the source feed stops, and the time the model goes
-# on speaking is the backlog. It resumes on live audio the moment the model
-# runs dry, which on a programme it can follow is immediate and costs nothing.
-# The viewer loses the phrases spoken during a drain instead of hearing the
-# programme minutes late.
+# Pause the input only when translated PCM is accumulating beyond the
+# scheduled A/V reserve. A blind pause every minute discarded live speech
+# even when the output queue was healthy.
 MODEL_QUIET_SECONDS = 3.0      # returned silence that counts as "nothing left"
-FEED_WINDOW_SECONDS = 60.0     # feeding between two backlog measurements
+FEED_WINDOW_SECONDS = 60.0     # minimum interval between backlog probes
+FEED_PRESSURE_SECONDS = 1.5    # queued PCM beyond the A/V sync reserve
 DRAIN_MAX_SECONDS = 20.0       # never starve the translation on a silent model
 DRIFT_MIN_SESSION_SECONDS = 45.0
+
+
+def should_probe_backlog(now, fed_since, playout):
+    """Avoid dropping live speech while translated PCM fits its sync reserve."""
+    if now - fed_since <= FEED_WINDOW_SECONDS or not playout:
+        return False
+    excess_ms = (playout.get('queued_ms', 0) -
+                 playout.get('sync_reserve_ms', 0))
+    return excess_ms > FEED_PRESSURE_SECONDS * 1000
 DUB_UDP_HOST = "127.0.0.1"
 DUB_UDP_PORT = 19877
 MAX_WS_MESSAGE_BYTES = 8 * 1024 * 1024
@@ -1321,13 +1325,13 @@ def stdin_reader():
                         preroll.append(send[0])
                         del preroll[:-INPUT_PREROLL_FRAMES]
                         send = []
-                # See FEED_WINDOW_SECONDS: the feed is held back regularly so
-                # the model can return to the picture, and so the backlog it
-                # had can be measured while it does.
+                # Probe only when received translation exceeds the scheduled
+                # A/V reserve. The reserve itself is intentional, not drift.
                 idle = MODEL_IDLE_AT[0]
                 if FEEDING[0]:
                     if (TRANSLATED_OUTPUT_STARTED.is_set() and
-                            captured_at - fed_since > FEED_WINDOW_SECONDS):
+                            should_probe_backlog(captured_at, fed_since,
+                                                 PLAYOUT_METRICS[0])):
                         FEEDING[0] = False
                         paused_at = captured_at
                         log("Pausing the source feed to measure and clear any "

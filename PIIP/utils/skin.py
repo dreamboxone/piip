@@ -198,28 +198,28 @@ def list_screen(name, title, subtitle='', buttons=(), header_widget=None,
     # Hybrid uses three recurring list shapes: a centred browser, a full
     # width manager and a left browser with artwork/EPG information at right.
     if layout == 'full':
-        list_x, list_y, list_w, list_h = q(40), q(80), q(1840), q(880)
+        list_x, list_y, list_w, list_h = q(40), q(80), q(1840), q(800)
     elif layout == 'split':
-        list_x, list_y, list_w, list_h = q(10), q(75), q(700), q(900)
+        list_x, list_y, list_w, list_h = q(10), q(75), q(700), q(820)
     elif layout == 'browser':
-        list_x, list_y, list_w, list_h = q(460), q(75), q(1000), q(900)
+        list_x, list_y, list_w, list_h = q(460), q(75), q(1000), q(820)
     elif layout == 'lower':
         list_x, list_y, list_w, list_h = q(460), q(550), q(1000), q(280)
     elif layout == 'sources':
-        # IPTVOrgBrowserScreen: six 70px rows under the emblem, no status
+        # IPTVOrgBrowserScreen: six 60px rows under the emblem, no status
         # line - its messages go to the header corner.
-        list_x, list_y, list_w, list_h = q(460), q(550), q(1000), q(420)
+        list_x, list_y, list_w, list_h = q(460), q(540), q(1000), q(360)
     elif layout == 'setup':
         list_x, list_y, list_w, list_h = q(460), q(500), q(1000), q(300)
     elif layout == 'cover':
-        list_x, list_y, list_w, list_h = q(40), q(500), q(1840), q(460)
+        list_x, list_y, list_w, list_h = q(40), q(500), q(1840), q(380)
     elif layout == 'summary':
         # A short action list with a multi-line summary underneath.  The
         # generic browser height left only one 34px line for the summary and
         # placed it behind the footer rule.
         list_x, list_y, list_w, list_h = q(410), q(130), q(1100), q(400)
     else:
-        list_x, list_y, list_w, list_h = q(410), q(130), q(1100), q(720)
+        list_x, list_y, list_w, list_h = q(410), q(130), q(1100), q(620)
     if rows:
         # Exactly as tall as its rows, as the reference's setup menus are,
         # so the pane behind it does not hang below the last field.
@@ -285,12 +285,12 @@ def list_screen(name, title, subtitle='', buttons=(), header_widget=None,
         ])
 
     parts.append('<eLabel position="0,%d" size="%d,2" backgroundColor="%s"/>'
-                 % (q(980), W, BTN_BLUE))
+                 % (q(920), W, BTN_BLUE))
     for index, (label, colour) in enumerate(buttons):
-        parts.append(chip(label, q(40 + index * 280), q(1006), colour,
+        parts.append(chip(label, q(40 + index * 280), q(944), colour,
                           width=q(260), height=q(56), wide=True, font=q(24)))
     if hint:
-        parts.append(pill(hint, q(hint_x), q(1010), width=q(hint_width),
+        parts.append(pill(hint, q(hint_x), q(948), width=q(hint_width),
                           height=q(50), font=q(24), wide=True))
     parts.extend(extra)
 

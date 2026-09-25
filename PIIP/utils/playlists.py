@@ -129,17 +129,26 @@ def ensure(target=STORE):
     Returns the path when a file was written, or None if one already
     existed or the location is not writable.
     """
-    if os.path.exists(target):
-        return None
     directory = os.path.dirname(target)
     if directory and not os.path.isdir(directory):
         return None
+    # Exclusive creation is atomic and works on Python 2.7 as well. A plain
+    # exists()+open('w') could truncate a list created between those calls.
     try:
-        with open(target, 'w') as fh:
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        with os.fdopen(fd, 'w') as fh:
             fh.write(TEMPLATE)
         return target
     except (IOError, OSError):
+        # Existing user data is always left untouched.
         return None
+
+
+def ensure_default(paths=SEARCH_PATHS, target=STORE):
+    """Create the default list only when no supported copy already exists."""
+    if path(paths) is not None:
+        return None
+    return ensure(target)
 
 
 def add(url, name='', target=None):

@@ -240,10 +240,10 @@ def engine_config(url, item=None, start_at=0.0, diag_dir=None):
 
 
 def ensure_playlist_file():
-    """Create /root/m3u.txt on first run so it is there to be filled in."""
+    """Create root's playlist list if no supported copy exists yet."""
     try:
-        from .utils.playlists import ensure
-        created = ensure()
+        from .utils import playlists
+        created = playlists.ensure_default()
         if created:
             print('[PIIP] created playlist list at %s' % created)
     except Exception as e:
@@ -285,6 +285,7 @@ def sessionstart(reason, session=None, **kwargs):
 
 
 def main(session, **kwargs):
+    ensure_playlist_file()
     from .main import FarsiMain
     session.open(FarsiMain)
 

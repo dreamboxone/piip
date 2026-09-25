@@ -103,8 +103,32 @@ body = open(target).read()
 check('template is all comments so it parses as empty',
       pl.parse(body) == [])
 check('template explains the format', 'Name = url' in body, body[:60])
+preserve_target = os.path.join(tmp, 'preserve.txt')
+with open(preserve_target, 'wb') as fh:
+    fh.write(b'http://keep-this-list.tv/live.m3u\n')
+check('ensure preserves an existing list byte for byte',
+      pl.ensure(preserve_target) is None and
+      open(preserve_target, 'rb').read() == b'http://keep-this-list.tv/live.m3u\n')
 check('unwritable location returns None',
       pl.ensure(os.path.join(tmp, 'no', 'such', 'dir', 'x.txt')) is None)
+
+print('\ndefault list preservation')
+alternate = write('alternate.txt', u'http://existing.tv/playlist.m3u\n')
+default_target = os.path.join(tmp, 'default', 'm3u.txt')
+os.makedirs(os.path.dirname(default_target))
+check('an existing alternate list prevents a shadowing default',
+      pl.ensure_default([alternate], default_target) is None
+      and not os.path.exists(default_target))
+with open(default_target, 'wb') as fh:
+    fh.write(b'http://preserve-me.tv/list.m3u\n')
+check('default creation never truncates its existing target',
+      pl.ensure_default([default_target], default_target) is None
+      and open(default_target, 'rb').read() ==
+      b'http://preserve-me.tv/list.m3u\n')
+empty_target = os.path.join(tmp, 'created-default.txt')
+check('the default is created when no supported list exists',
+      pl.ensure_default([missing], empty_target) == empty_target
+      and os.path.isfile(empty_target))
 
 print('\nadd()')
 check('appending works', pl.add('http://new.tv/4.m3u', 'New', target) is True)
@@ -131,6 +155,14 @@ PL_B = (u'#EXTM3U\n#EXTINF:-1 group-title="Sport",B One\n'
         u'http://b.tv/live/2.ts\n')
 file_a = write('a.m3u', PL_A)
 file_b = write('b.m3u', PL_B)
+
+print('\nlocal M3U setup and playback')
+local_status = m3u.probe(file_a)
+check('setup probe accepts a local M3U path',
+      local_status.startswith('OK - 1 channels') and 'local file' in local_status,
+      local_status)
+check('setup load accepts the same local M3U path',
+      len(m3u.fetch(file_a, kinds=(m3u.LIVE,))) == 1)
 
 single = write('one.txt', file_a)
 items, errors = m3u.load_all('', paths=[single])

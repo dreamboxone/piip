@@ -66,6 +66,7 @@ class FarsiMain(CarouselScreen):
 
     def __init__(self, session):
         self.saved_service = None
+        self.playlist_file_config = None
         CarouselScreen.__init__(self, session)
         self.onClose.append(self.restoreService)
 
@@ -134,6 +135,21 @@ class FarsiMain(CarouselScreen):
     def select(self):
         """Open the setup screen for the selected provider type."""
         kind = self.item()[1]
+        if kind == 'm3u':
+            from .utils import playlists
+            if playlists.load():
+                # A non-empty m3u.txt is the chosen source for this route.
+                # Ignore the old single-URL setting for this visit, but
+                # restore it when the file-backed home screen closes.
+                self.playlist_file_config = (
+                    _c.source.value, _c.m3u_url.value,
+                    _c.active_server.value)
+                _c.source.value = 'm3u'
+                _c.m3u_url.value = ''
+                _c.active_server.value = 'm3u.txt'
+                self.session.openWithCallback(
+                    self.playlistFileClosed, FarsiHome, True)
+                return
         # Pre-filled from the active server when it is of this type, so
         # reconnecting to yesterday's server is one keypress away.
         entry = None
@@ -145,6 +161,13 @@ class FarsiMain(CarouselScreen):
     def connected(self, entry=None):
         if entry:
             self.session.open(FarsiHome)
+        self.updateUI()
+
+    def playlistFileClosed(self, *args):
+        if self.playlist_file_config is not None:
+            (_c.source.value, _c.m3u_url.value,
+             _c.active_server.value) = self.playlist_file_config
+            self.playlist_file_config = None
         self.updateUI()
 
     def openServers(self):

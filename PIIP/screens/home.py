@@ -53,10 +53,12 @@ class FarsiHome(CarouselScreen):
          'Manage queued and completed downloads', 'bg_main.png'),
     )
 
-    def __init__(self, session):
+    def __init__(self, session, m3u_file_only=False):
+        self.m3u_file_only = bool(m3u_file_only)
         CarouselScreen.__init__(self, session)
-        self['title'].setText(native(
-            (_c.active_server.value or 'PIIP').upper()))
+        title = ('M3U.TXT' if self.m3u_file_only else
+                 (_c.active_server.value or 'PIIP').upper())
+        self['title'].setText(native(title))
         self.account_task = BackgroundTask(self, self._accountWorker,
                                            self._accountReady, 'home-account')
         self.onLayoutFinish.append(self.loadAccount)
@@ -92,6 +94,13 @@ class FarsiHome(CarouselScreen):
             self['subtitle'].setText(native('Expiry: unlimited / not reported'))
 
     def refresh(self):
+        if self.m3u_file_only:
+            self['status'].setText(native(
+                'M3U.TXT   |   translation %s to %s   |   API key %s'
+                % ('on' if _c.translate.value else 'off',
+                   _c.language.value,
+                   'set' if _apikey() else 'MISSING')))
+            return
         entry = servers.active()
         where = servers.address(entry)
         if '://' in where:

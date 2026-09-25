@@ -228,6 +228,10 @@ class eServiceReference(object):
         _check_text(name, 'eServiceReference_setName')
         self.name = name
 
+    def setPath(self, path):
+        _check_text(path, 'eServiceReference_setPath')
+        self.path = path
+
     def toString(self):
         return '%s:%s:%s' % (self.type, self.flags, self.path)
 
@@ -392,11 +396,20 @@ class Session(object):
 class _Nav(object):
     def __init__(self):
         self.playing = None
+        self.stop_calls = 0
+        self.force_restarts = 0
 
-    def playService(self, ref):
+    def playService(self, ref, forceRestart=False):
+        if (self.playing is not None and
+                self.playing.toString() == ref.toString() and
+                not forceRestart):
+            return
+        if forceRestart:
+            self.force_restarts += 1
         self.playing = ref
 
     def stopService(self):
+        self.stop_calls += 1
         self.playing = None
 
     def getCurrentService(self):

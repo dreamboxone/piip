@@ -33,6 +33,7 @@ enigma_stub.install()
 
 from enigma_stub import Session, OPENED
 from PIIP.utils import servers
+from PIIP.utils import playlists as playlist_lists
 from PIIP.utils.compat import native
 
 FAIL = []
@@ -288,6 +289,34 @@ check('M3U INFO opens the online playlist browser',
 main_actions = main_mod.FarsiMain(Session())['actions'].actions
 check('main yellow opens the complete settings page',
       main_actions.get('yellow').wrapped.__name__ == 'openSettings')
+
+print('')
+print('M3U card uses the playlist list before a stale single URL')
+old_playlist_load = playlist_lists.load
+old_playlist_config = (_c.source.value, _c.m3u_url.value,
+                       _c.active_server.value)
+playlist_lists.load = lambda: [playlist_lists.Entry(
+    'From file', 'https://lists.example/live.m3u')]
+try:
+    file_session = Session()
+    file_menu = main_mod.FarsiMain(file_session)
+    file_menu.index = 1
+    file_menu.select()
+    file_home = file_session.dialogs[-1]
+    check('M3U card opens the file-backed home screen',
+          isinstance(file_home, home.FarsiHome)
+          and file_home.m3u_file_only)
+    check('file mode ignores the previous one-URL setting',
+          _c.source.value == 'm3u' and _c.m3u_url.value == ''
+          and _c.active_server.value == 'm3u.txt')
+    file_home._callback(None)
+    check('closing file mode restores the previous settings',
+          (_c.source.value, _c.m3u_url.value, _c.active_server.value)
+          == old_playlist_config)
+finally:
+    playlist_lists.load = old_playlist_load
+    (_c.source.value, _c.m3u_url.value,
+     _c.active_server.value) = old_playlist_config
 
 print('')
 print('connecting from setup saves first')

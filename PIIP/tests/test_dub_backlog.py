@@ -70,8 +70,20 @@ check('discarding an empty queue is not an error',
 # ------------------------------------------------------ the backlog probe
 check('the feed is released long before the drain window closes',
       helper.MODEL_QUIET_SECONDS < helper.DRAIN_MAX_SECONDS)
-check('a measurement is taken at least once a minute',
-      helper.FEED_WINDOW_SECONDS <= 60.0)
+check('live healthy 8.5s queue within 8s sync reserve keeps feeding',
+      not helper.should_probe_backlog(61, 0,
+                                      {'queued_ms': 8500,
+                                       'sync_reserve_ms': 7976}))
+check('substantial excess translation can trigger a probe',
+      helper.should_probe_backlog(61, 0,
+                                  {'queued_ms': 11000,
+                                   'sync_reserve_ms': 7976}))
+check('pressure before the probe interval does not interrupt speech',
+      not helper.should_probe_backlog(30, 0,
+                                      {'queued_ms': 11000,
+                                       'sync_reserve_ms': 7976}))
+check('backlog probes are spaced by at least a minute',
+      helper.FEED_WINDOW_SECONDS >= 60.0)
 check('a drain is bounded so translation is never starved',
       helper.DRAIN_MAX_SECONDS <= helper.FEED_WINDOW_SECONDS)
 check('quiet must last longer than a phrasing pause to count as caught up',

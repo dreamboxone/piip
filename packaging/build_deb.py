@@ -33,7 +33,7 @@ SOURCE = os.path.join(ROOT, 'PIIP')
 RELEASE = os.path.join(ROOT, 'release', 'PIIP')
 
 PACKAGE = 'enigma2-plugin-extensions-piip'
-VERSION = '1.0.7'
+VERSION = '1.0.18'
 ARCH = 'all'
 INSTALL_DIR = 'usr/lib/enigma2/python/Plugins/Extensions/PIIP'
 
@@ -91,6 +91,15 @@ if [ ! -s /root/apikey.txt ] && [ ! -s /home/root/apikey.txt ] && [ ! -s /etc/en
     echo ""
 fi
 if [ ! -f /root/m3u.txt ] && [ ! -f /home/root/m3u.txt ]; then
+    if [ ! -f /etc/enigma2/piip_m3u.txt ] && [ ! -f /media/hdd/m3u.txt ]; then
+        mkdir -p "$HOMEDIR"
+        cat > "$HOMEDIR/m3u.txt" <<'PIIP_M3U_EOF'
+# PIIP - playlist list
+# One M3U playlist URL or local M3U file path per line.
+# Optionally use: Sports = https://provider.example/playlist.m3u
+PIIP_M3U_EOF
+        chmod 644 "$HOMEDIR/m3u.txt"
+    fi
     echo "    Add your playlists to $HOMEDIR/m3u.txt (one per line)."
     echo ""
 fi

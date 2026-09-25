@@ -6,6 +6,7 @@
 # under another name is prohibited. See LICENSE. https://t.me/Routekernel1
 from __future__ import print_function
 
+import collections
 import errno
 import json
 import os
@@ -28,7 +29,7 @@ TS_PACKET_BYTES = 188
 # 32 KiB combination repeatedly left DreamOS' hardware video queue empty.
 HTTP_IO_BYTES = TS_PACKET_BYTES * 256
 READ_BYTES = HTTP_IO_BYTES
-MAX_PENDING_BYTES = 2 * 1024 * 1024
+MAX_PENDING_BYTES = 8 * 1024 * 1024
 LOG_INTERVAL_SECONDS = 30
 PACE_SELECT_SECONDS = 0.01
 RATE_WINDOW_SECONDS = 0.50
@@ -216,7 +217,95 @@ class TokenPacer(object):
             self.tokens = max(0.0, self.tokens - int(count))
 
 
-def run(port, state_file, pacing=False):
+class PcrPacer(object):
+    """Release complete TS packets against the muxed stream's PCR clock."""
+
+    PCR_WRAP = (1 << 33) * 300
+    DECODER_LEAD_SECONDS = 0.35
+
+    def __init__(self):
+        self.seen = 0
+        self.tail = bytearray()
+        self.anchors = collections.deque()
+        self.last_pcr = None
+        self.last_pcr_wall = None
+        self.media_seconds = 0.0
+        self.wall_start = None
+
+    def feed(self, now, chunk):
+        data = self.tail + bytearray(chunk)
+        base = self.seen - len(self.tail)
+        index = 0
+        while index + TS_PACKET_BYTES <= len(data):
+            if data[index] != 0x47:
+                index += 1
+                continue
+            if (index + TS_PACKET_BYTES < len(data) and
+                    data[index + TS_PACKET_BYTES] != 0x47):
+                index += 1
+                continue
+            control = (data[index + 3] >> 4) & 3
+            if control in (2, 3) and data[index + 4] >= 7:
+                flags = data[index + 5]
+                if flags & 0x10:
+                    p = data[index + 6:index + 12]
+                    base_ticks = ((p[0] << 25) | (p[1] << 17) |
+                                  (p[2] << 9) | (p[3] << 1) | (p[4] >> 7))
+                    ticks = base_ticks * 300 + ((p[4] & 1) << 8) + p[5]
+                    if self.last_pcr is not None:
+                        delta = (ticks - self.last_pcr) % self.PCR_WRAP
+                        if 0 < delta < 27000000:
+                            self.media_seconds += delta / 27000000.0
+                    else:
+                        self.wall_start = float(now) + 0.20
+                    self.last_pcr = ticks
+                    self.last_pcr_wall = float(now)
+                    self.anchors.append((base + index,
+                                         self.media_seconds))
+            index += TS_PACKET_BYTES
+        self.seen += len(chunk)
+        self.tail = data[index:]
+
+    def budget(self, now, pending_bytes):
+        if not pending_bytes:
+            return 0
+        if (self.last_pcr_wall is not None and
+                float(now) - self.last_pcr_wall > 1.0):
+            # A source without ongoing PCR must not strand the TV on black.
+            return min(pending_bytes, HTTP_IO_BYTES)
+        pending_start = self.seen - pending_bytes
+        while len(self.anchors) > 2 and self.anchors[1][0] <= pending_start:
+            self.anchors.popleft()
+        if len(self.anchors) < 2:
+            # The first PAT/PMT and PCR must reach the decoder promptly.
+            if (self.anchors and self.seen > HTTP_IO_BYTES * 4):
+                return min(pending_bytes, HTTP_IO_BYTES)
+            allowed = ((self.anchors[0][0] + TS_PACKET_BYTES)
+                       if self.anchors else HTTP_IO_BYTES)
+            return min(pending_bytes, HTTP_IO_BYTES,
+                       max(0, allowed - pending_start))
+        target = max(0.0, float(now) - self.wall_start +
+                     self.DECODER_LEAD_SECONDS)
+        previous = self.anchors[0]
+        allowed = previous[0]
+        for following in list(self.anchors)[1:]:
+            if following[1] <= target:
+                allowed = following[0]
+                previous = following
+                continue
+            span = following[1] - previous[1]
+            if span > 0:
+                fraction = max(0.0, min(1.0,
+                                        (target - previous[1]) / span))
+                allowed = previous[0] + int(
+                    (following[0] - previous[0]) * fraction)
+            break
+        available = max(0, allowed - pending_start)
+        return min(pending_bytes, HTTP_IO_BYTES,
+                   (available // TS_PACKET_BYTES) * TS_PACKET_BYTES)
+
+
+def run(port, state_file, pacing=False, pcr_pacing=False):
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     set_nonblocking_fd(0)
@@ -239,12 +328,14 @@ def run(port, state_file, pacing=False):
     last_log = steady_time()
     estimator = InputRateEstimator()
     pacer = TokenPacer()
+    pcr_pacer = PcrPacer() if pcr_pacing else None
     set_state(
-        state_file, "listening", port=int(port), paced=bool(pacing)
+        state_file, "listening", port=int(port), paced=bool(pacing or pcr_pacing)
     )
     log(
         "Bounded local MPEG-TS HTTP server is listening on port %d "
-        "(paced=%s)" % (port, "yes" if pacing else "no")
+        "(paced=%s)" % (port, "pcr" if pcr_pacing else
+                         "rate" if pacing else "no")
     )
 
     try:
@@ -253,15 +344,15 @@ def run(port, state_file, pacing=False):
             if client is not None:
                 readers.append(client)
             writers = []
-            send_budget = (
-                pacer.budget(steady_time(), len(pending))
-                if pacing else len(pending)
-            )
+            send_budget = (pcr_pacer.budget(steady_time(), len(pending))
+                           if pcr_pacing else
+                           pacer.budget(steady_time(), len(pending))
+                           if pacing else len(pending))
             if client is not None and (response or send_budget > 0):
                 writers.append(client)
             readable, writable, _exceptional = eintr_retry(
                 select.select, readers, writers, [],
-                PACE_SELECT_SECONDS if pacing else 0.05
+                PACE_SELECT_SECONDS if (pacing or pcr_pacing) else 0.05
             )
 
             if server in readable:
@@ -282,6 +373,8 @@ def run(port, state_file, pacing=False):
                 client_ready = False
                 response = bytearray()
                 pending = bytearray()
+                if pcr_pacing:
+                    pcr_pacer = PcrPacer()
                 if pacing:
                     pacer.reset_client(steady_time())
                 log("Native Enigma2 HTTP/TS client connected")
@@ -308,13 +401,15 @@ def run(port, state_file, pacing=False):
                         media_ready = True
                         set_state(
                             state_file, "ready", port=int(port),
-                            paced=bool(pacing),
+                            paced=bool(pacing or pcr_pacing),
                         )
                         log("MPEG-TS media is ready")
                     # Before the HTTP request is complete, deliberately drain
                     # the producer instead of retaining stale startup media.
                     if client is not None and client_ready:
                         pending.extend(bytearray(chunk))
+                        if pcr_pacing:
+                            pcr_pacer.feed(steady_time(), chunk)
                         total_dropped += trim_pending(pending)
 
             if client is not None and client in readable:
@@ -337,7 +432,7 @@ def run(port, state_file, pacing=False):
                                 state_file, "ready", port=int(port),
                                 client=True, pending_kb=0,
                                 dropped_kb=total_dropped // 1024,
-                                paced=bool(pacing),
+                                paced=bool(pacing or pcr_pacing),
                             )
                 except (IOError, socket.error) as error:
                     if error_number(error) not in (errno.EINTR, errno.EAGAIN, errno.EWOULDBLOCK):
@@ -350,7 +445,7 @@ def run(port, state_file, pacing=False):
                         set_state(
                             state_file, "ready" if media_ready else "listening",
                             port=int(port), dropped_kb=total_dropped // 1024,
-                            client=False, paced=bool(pacing),
+                            client=False, paced=bool(pacing or pcr_pacing),
                         )
 
             if client is not None and client in writable:
@@ -360,10 +455,10 @@ def run(port, state_file, pacing=False):
                         if count:
                             del response[:count]
                     elif pending:
-                        send_bytes = (
-                            pacer.budget(steady_time(), len(pending))
-                            if pacing else min(len(pending), HTTP_IO_BYTES)
-                        )
+                        send_bytes = (pcr_pacer.budget(steady_time(), len(pending))
+                                      if pcr_pacing else
+                                      pacer.budget(steady_time(), len(pending))
+                                      if pacing else min(len(pending), HTTP_IO_BYTES))
                         if send_bytes <= 0:
                             continue
                         count = client.send(to_bytes(pending[:send_bytes]))
@@ -389,7 +484,7 @@ def run(port, state_file, pacing=False):
                             "ready" if media_ready else "listening",
                             port=int(port),
                             dropped_kb=total_dropped // 1024,
-                            client=False, paced=bool(pacing),
+                            client=False, paced=bool(pacing or pcr_pacing),
                         )
 
             now = steady_time()
@@ -400,7 +495,7 @@ def run(port, state_file, pacing=False):
                     (total_input / 1048576.0, total_sent / 1048576.0,
                      len(pending) / 1048576.0, total_dropped // 1024,
                      "yes" if client is not None else "no",
-                     "yes" if pacing else "no",
+                    "pcr" if pcr_pacing else "rate" if pacing else "no",
                      (estimator.rate or 0.0) * 8.0 / 1000000.0)
                 )
                 set_state(
@@ -408,7 +503,7 @@ def run(port, state_file, pacing=False):
                     port=int(port), pending_kb=len(pending) // 1024,
                     dropped_kb=total_dropped // 1024,
                     client=bool(client),
-                    paced=bool(pacing),
+                    paced=bool(pacing or pcr_pacing),
                     pacing_mbps=round(
                         (estimator.rate or 0.0) * 8.0 / 1000000.0, 1
                     ),
@@ -421,18 +516,20 @@ def run(port, state_file, pacing=False):
         except Exception:
             pass
         set_state(
-            state_file, "stopped", port=int(port), paced=bool(pacing)
+            state_file, "stopped", port=int(port), paced=bool(pacing or pcr_pacing)
         )
     return 0
 
 
 def main():
     if len(sys.argv) not in (3, 4):
-        log("usage: e2dub_http.py PORT STATE_FILE [paced]")
+        log("usage: e2dub_http.py PORT STATE_FILE [paced|pcr]")
         return 2
     try:
         pacing = len(sys.argv) == 4 and sys.argv[3] == "paced"
-        return run(int(sys.argv[1]), sys.argv[2], pacing=pacing)
+        pcr_pacing = len(sys.argv) == 4 and sys.argv[3] == "pcr"
+        return run(int(sys.argv[1]), sys.argv[2], pacing=pacing,
+                   pcr_pacing=pcr_pacing)
     except Exception as error:
         log("HTTP relay failed: %s" % str(error)[:240])
         return 1

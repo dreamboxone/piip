@@ -233,14 +233,16 @@ class FarsiChannels(Screen):
         self['list'].setList([c.label() for c in chans])
         self['group'].setText(native('%s  (%d/%d)' % (
             self.current_group(), self.group_index + 1, len(self.groups))))
-        translating = bool(_c.translate.value and api_key())
+        key_available = bool(api_key())
+        translating = bool(_c.translate.value and key_available)
         size = max(1, int(_c.poster_count.value or 20))
         total = self.filteredCount()
         pages = max(1, (total + size - 1) // size)
         self['status'].setText(native(
             '%d channels   |   page %d/%d   |   translation: %s'
             % (total, self.page + 1, pages, 'on (%s)' % _c.language.value
-               if translating else 'off — no API key found')))
+               if translating else ('off' if key_available else
+                                    'off — no API key found'))))
         self.updateDetails()
 
     def up(self):

@@ -12,15 +12,17 @@
 #
 """Extended M3U playlist parsing."""
 
+import os
 import re
 
 try:
     from urllib.request import Request, urlopen
     from urllib.error import HTTPError, URLError
-    from urllib.parse import urlparse, parse_qs
+    from urllib.parse import urlparse, parse_qs, unquote
 except ImportError:                                    # Python 2 images
     from urllib2 import Request, urlopen, HTTPError, URLError
     from urlparse import urlparse, parse_qs
+    from urllib import unquote
 
 from .models import MediaItem, LIVE, MOVIE, EPISODE
 
@@ -86,8 +88,39 @@ def error_text(exc):
     return '%s: %s' % (type(exc).__name__, exc)
 
 
+def _local_path(url):
+    """Return a local M3U path, or None when this is a network URL."""
+    text = native(url).strip()
+    if os.path.isfile(text):
+        return text
+    try:
+        parsed = urlparse(text)
+    except Exception:
+        return text
+    if parsed.scheme == 'file':
+        path = unquote(parsed.path)
+        if parsed.netloc:
+            path = '//' + parsed.netloc + path
+        return path
+    if not parsed.scheme and not parsed.netloc:
+        return text
+    return None
+
+
 def probe(url, timeout=20, user_agent=UA, agents=PLAYER_AGENTS):
     """Try a playlist and describe the outcome, for the diagnostics screen."""
+    local = _local_path(url)
+    if local is not None:
+        try:
+            with open(local, 'rb') as fh:
+                raw = fh.read()
+        except Exception as exc:
+            return error_text(exc)
+        items = parse(raw)
+        if not items:
+            return ('downloaded %d bytes but found no channels - '
+                    'is this really an M3U?' % len(raw))
+        return 'OK - %d channels, %d bytes (local file)' % (len(items), len(raw))
     tried = [user_agent] + [a for a in agents if a != user_agent]
     last = ''
     for agent in tried:
@@ -276,6 +309,11 @@ def fetch(url, timeout=30, user_agent=UA, agents=PLAYER_AGENTS, kinds=None):
     are wanted from an Xtream get.php link they come from the panel's API,
     falling back to the playlist itself if the API will not answer.
     """
+    local = _local_path(url)
+    if local is not None:
+        items = load(local)
+        return ([item for item in items if item.kind in kinds]
+                if kinds is not None else items)
     live_only = kinds is not None and set(kinds) <= set([LIVE])
     if live_only and xtream_credentials(url) is not None:
         try:

@@ -27,6 +27,7 @@ service position, so the delay buffer is already accounted for.
 import os
 import re
 import tempfile
+import threading
 import time
 
 try:
@@ -289,6 +290,16 @@ class FarsiPlayer(Screen):
             self.channels = [item]
             self.index = 0
         self.engine = None
+        self._dub_handoff_pending = False
+        self._service_transition_until = 0.0
+        self._closing = False
+        self._translation_lock = threading.Lock()
+        self._translation_phase = ''
+        self._translation_cancelled = False
+        self._translation_pending = None
+        self._translation_task = None
+        self._last_translation_key_at = 0.0
+        self._dub_waiting = False
         self.osd_visible = True
         self.position = self.start_at
         self.duration = int(getattr(item, 'duration', 0) or 0)
@@ -445,7 +456,7 @@ class FarsiPlayer(Screen):
         bits = ['OK: channel list', 'UP/DOWN: change channel']
         if self.seekable:
             bits.append('YELLOW/BLUE: skip %ds' % SEEK_STEP)
-        bits += ['RED: translation', 'GREEN: delay', '1: subtitles',
+        bits += ['RED: start/stop translation', 'GREEN: delay', '1: subtitles',
                  '2/8: subtitle sync', '4/6: subtitle FPS',
                  '3: player', '5: guide', '7: aspect',
                  'MENU: hide panel', 'EXIT: stop']
@@ -631,31 +642,66 @@ class FarsiPlayer(Screen):
             portal=_c.stalker_portal.value if _c.source.value == 'stalker'
             else None,
             token=getattr(self.item, 'auth_token', '') or None)
-        self.session.nav.stopService()
         self.session.nav.playService(ref)
         self['state'].setText(native('playing'))
         self.poll.start(2000, False)
         self.subtimer.start(250, False)
 
-    def playLocal(self):
+    def playLocal(self, force_restart=False):
         if getattr(self.engine, 'helper_state', None) is not None:
-            # As E2Dub plays it: a DVB/TS service on the local HTTP path, so
-            # DreamOS demuxes both audio tracks natively.
-            from ..translate.dub import LOCAL_DVB_REFERENCE
-            ref = eServiceReference(LOCAL_DVB_REFERENCE)
-            ref.type = getattr(eServiceReference, 'idDVB', 1)
-            ref.setPath(self.engine.url)
+            from ..translate.dub import LOCAL_DVB_REFERENCE, is_oe_alliance
+            if is_oe_alliance():
+                # OpenATV's DVB service crashes while switching from an IPTV
+                # service to an HTTP path. Its IPTV player can demux the local
+                # MPEG-TS stream directly; keep the DVB service for DreamOS.
+                ref = eServiceReference(self.serviceType(), 0,
+                                        self.engine.url)
+            else:
+                ref = eServiceReference(LOCAL_DVB_REFERENCE)
+                ref.type = getattr(eServiceReference, 'idDVB', 1)
+                ref.setPath(self.engine.url)
             ref.setName(self.item.name)
-            self.session.nav.stopService()
-            self.session.nav.playService(ref)
+            self.session.nav.playService(ref, forceRestart=force_restart)
             self['state'].setText(native('starting translation...'))
             return
         ref = eServiceReference(self.serviceType(), 0,
                                 self.engine.url)
         ref.setName(self.item.name)
-        self.session.nav.stopService()
-        self.session.nav.playService(ref)
+        self.session.nav.playService(ref, forceRestart=force_restart)
         self['state'].setText(native('starting...'))
+
+    def _openDubService(self):
+        """Switch to the ready translated service outside the polling tick.
+
+        Stopping and opening an Enigma2 service can emit several native
+        service callbacks. Keep the recurring player and subtitle callbacks
+        out of that transition, then let the decoder settle before polling
+        service metadata again.
+        """
+        self._dub_handoff_pending = False
+        if self._closing or not self.engine:
+            return
+        try:
+            if not self.engine.alive():
+                self.handleError('translation engine stopped before playback')
+                return
+            self.diagNote('opening ready local translated service')
+            self._service_transition_until = time.time() + 1.5
+            self.playLocal()
+        finally:
+            if not self._closing and not self.direct and self.engine:
+                self.poll.start(1000, False)
+                self.subtimer.start(250, False)
+
+    def _scheduleDubService(self):
+        """Defer local service handoff until the current timer callback exits."""
+        if self._dub_handoff_pending or self._closing:
+            return
+        self._dub_handoff_pending = True
+        self.diagNote('translated stream ready; deferring service handoff')
+        self.poll.stop()
+        self.subtimer.stop()
+        self.deferDialog(self._openDubService)
 
     def stop(self):
         self.saveResume()
@@ -689,6 +735,18 @@ class FarsiPlayer(Screen):
             resume_store.put(self.item, int(self.position), self.duration)
 
     def cleanup(self):
+        with self._translation_lock:
+            self._closing = True
+            self._translation_cancelled = True
+            task = self._translation_task
+            pending = (self._translation_pending if
+                       task is None or not task.running() else None)
+            if pending is not None:
+                self._translation_pending = None
+        if task is not None:
+            task.stop()
+        if pending is not None:
+            pending.stop()
         self.diagNote('close')
         try:
             from ..utils import diagagent
@@ -823,6 +881,9 @@ class FarsiPlayer(Screen):
 
     def handleError(self, error=None):
         """Schedule a bounded restart; repeated events cannot stack timers."""
+        if (self._closing or self._translation_phase == 'starting' or
+                time.time() < self._service_transition_until):
+            return
         if self._retrying:
             return
         if getattr(self, '_dub_waiting', False) and error is None:
@@ -840,16 +901,21 @@ class FarsiPlayer(Screen):
         self.retry_timer.start(delay * 1000, True)
 
     def doEofInternal(self, playing=True):
+        if (self._closing or self._translation_phase == 'starting' or
+                time.time() < self._service_transition_until):
+            return
         if getattr(self.engine, 'helper_state', None) is not None and                 self.engine.alive():
             # The translated pipeline is still running: DreamOS' HTTP/TS
             # source reports EOF on a short stall. Reattach to the local
             # stream instead of rebuilding Gemini and the delay buffer.
             self.diagNote('eof on local translated stream; reattaching')
-            self.playLocal()
+            self.playLocal(force_restart=True)
             return
         self.handleError('eof')
 
     def _retryStream(self):
+        if self._closing or self._translation_phase == 'starting':
+            return
         self._retrying = False
         self['state'].setText(native('reconnecting...'))
         if self.engine:
@@ -1095,6 +1161,10 @@ class FarsiPlayer(Screen):
 
     def switchTo(self, index):
         """Move to another channel without leaving the player."""
+        if self._translation_phase == 'starting':
+            self['state'].setText(native('translation is starting; please wait'))
+            self.showOSD()
+            return
         if len(self.channels) < 2:
             return
         index = index % len(self.channels)
@@ -1173,15 +1243,152 @@ class FarsiPlayer(Screen):
     # -------------------------------------------------------------- actions
 
     def toggleTranslation(self):
-        """Mute/unmute the translated track without touching the engine."""
-        if _c.vol_translated.value > 0:
-            self._saved_trans = _c.vol_translated.value
-            _c.vol_translated.value = 0
+        """Start or stop live translation without leaving the player."""
+        if self._closing:
+            return
+        now = time.time()
+        if now - self._last_translation_key_at < 0.8:
+            self.diagNote('red key: duplicate key event ignored')
+            return
+        self._last_translation_key_at = now
+        if self._translation_phase == 'starting':
+            with self._translation_lock:
+                self._translation_cancelled = True
+            self._saveTranslationMode(False)
+            self.diagNote('red key: cancelling translation startup')
+            self['state'].setText(native('stopping translation startup...'))
+        elif self._translation_phase == 'stopping':
+            self['state'].setText(native('stopping translation...'))
+        elif self.direct:
+            self._enableTranslation()
         else:
-            _c.vol_translated.value = getattr(self, '_saved_trans', 100)
-        _c.vol_translated.save()
-        self._apply_gains()
+            self._disableTranslation()
         self.showOSD()
+
+    def _saveTranslationMode(self, enabled):
+        _c.translate.value = bool(enabled)
+        _c.translate.save()
+        configfile.save()
+
+    def _enableTranslation(self):
+        key = api_key()
+        if not key:
+            self['state'].setText(native('Gemini API key is missing'))
+            self.diagNote('red key: translation cannot start without API key')
+            return
+        self._saveTranslationMode(True)
+        try:
+            cfg = engine_config(self.item.url, self.item, self.start_at,
+                                diag_dir=getattr(self, 'diag_dir', ''))
+            from ..translate.dub import DubPipeline
+            from ..translate.gemini import language_code
+            pipeline = DubPipeline(cfg, key, language_code(_c.language.value),
+                                   _c.vol_original.value, _c.ffmpeg.value)
+        except Exception:
+            self._saveTranslationMode(False)
+            raise
+        with self._translation_lock:
+            self._translation_pending = pipeline
+            self._translation_cancelled = False
+            self._translation_phase = 'starting'
+        self.retry_timer.stop()
+        self._retrying = False
+        self['state'].setText(native('starting translation...'))
+        self.diagNote('red key: starting translation while direct service plays')
+        task = BackgroundTask(self, self._startTranslationWork,
+                              self._translationStartDone, 'translation-start')
+        self._translation_task = task
+        task.start()
+
+    def _startTranslationWork(self):
+        with self._translation_lock:
+            pipeline = self._translation_pending
+        try:
+            started = pipeline.start()
+            reason = ''
+            if not started:
+                source = getattr(pipeline, 'source', None)
+                reason = source.failure() if source is not None else ''
+        except Exception:
+            try:
+                pipeline.stop()
+            finally:
+                with self._translation_lock:
+                    if self._translation_pending is pipeline:
+                        self._translation_pending = None
+            raise
+        with self._translation_lock:
+            cancelled = self._closing or self._translation_cancelled
+            if not started or cancelled:
+                self._translation_pending = None
+        self.diagNote('red key: worker finished started=%s cancelled=%s' %
+                      (started, cancelled))
+        if not started or cancelled:
+            pipeline.stop()
+        return started and not cancelled, reason
+
+    def _translationStartDone(self, result, error):
+        with self._translation_lock:
+            pipeline = self._translation_pending
+            self._translation_pending = None
+            cancelled = self._translation_cancelled or self._closing
+        self.diagNote('red key: completion result=%s error=%s cancelled=%s '
+                      'pipeline=%s' % (result, bool(error), cancelled,
+                                       pipeline is not None))
+        self._translation_task = None
+        self._translation_phase = ''
+        if cancelled:
+            if pipeline is not None:
+                self._stopTranslationAsync(pipeline)
+            self['state'].setText(native('playing'))
+            return
+        if error or not result or not result[0] or pipeline is None:
+            self._saveTranslationMode(False)
+            reason = error or (result[1] if result else '') or 'unknown error'
+            self.diagNote('red key: translation startup failed: %s' % reason)
+            self['state'].setText(native('translation failed; channel continues'))
+            if pipeline is not None:
+                self._stopTranslationAsync(pipeline)
+            return
+        self.engine = pipeline
+        self.direct = False
+        self._dub_buffer_set = False
+        self._dub_track = None
+        self._dub_waiting = True
+        self.started_at = time.time()
+        self['state'].setText(native('buffering translation...'))
+        self.diagNote('red key: translation pipeline started')
+        self.poll.start(1000, False)
+        self.subtimer.start(250, False)
+
+    def _stopTranslationAsync(self, pipeline):
+        self._translation_phase = 'stopping'
+        task = BackgroundTask(self, pipeline.stop,
+                              self._translationStopDone, 'translation-stop')
+        self._translation_task = task
+        task.start()
+
+    def _translationStopDone(self, result, error):
+        self._translation_task = None
+        self._translation_phase = ''
+        if error:
+            self.diagNote('red key: translation stop failed: %s' % error)
+
+    def _disableTranslation(self):
+        self._saveTranslationMode(False)
+        self.diagNote('red key: stopping translation')
+        self.poll.stop()
+        self.subtimer.stop()
+        self.retry_timer.stop()
+        self._retrying = False
+        self._dub_waiting = False
+        self._dub_handoff_pending = False
+        self._service_transition_until = time.time() + 1.5
+        self.direct = True
+        self.playDirect()
+        pipeline, self.engine = self.engine, None
+        if pipeline is not None:
+            self._stopTranslationAsync(pipeline)
 
     def cycleDelay(self):
         d = _c.delay.value + 1
@@ -1344,11 +1551,15 @@ class FarsiPlayer(Screen):
                                        ('16:9' if widescreen else '4:3')))
 
     def refresh(self):
+        if self._closing or time.time() < self._service_transition_until:
+            return
         self.updateMediaTags()
         self._updateBitrate()
         if self.direct:
             self.updateProgress()
             self.refreshEPG()
+            if self._translation_phase == 'starting':
+                return
             # Some DreamOS/GStreamer builds occasionally create playbin but
             # never start the first HTTP read. Replaying the identical 4097
             # service wakes it immediately. This stall emits no Enigma event,
@@ -1372,7 +1583,7 @@ class FarsiPlayer(Screen):
             if (read_state(RELAY_STATE).get('state') == 'ready' and
                     read_state(HTTP_STATE).get('state') == 'ready'):
                 self._dub_waiting = False
-                self.playLocal()
+                self._scheduleDubService()
             else:
                 waited = int(time.time() - getattr(self, 'started_at', time.time()))
                 self.pinOSD()

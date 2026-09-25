@@ -198,10 +198,15 @@ check('player constructs for a live channel', ok, err)
 s = Session()
 p = player_mod.FarsiPlayer(s, ITEM_LIVE)
 check('player skin is a str', isinstance(p.skin, str))
-for keyname, fn in sorted(dict(p['actions'].actions,
-                               **p['numbers'].actions).items()):
-    ok, err = guarded(keyname, fn)
-    check('player: %s does not crash without an engine' % keyname, ok, err)
+_player_api_key = player_mod.api_key
+player_mod.api_key = lambda: ''
+try:
+    for keyname, fn in sorted(dict(p['actions'].actions,
+                                   **p['numbers'].actions).items()):
+        ok, err = guarded(keyname, fn)
+        check('player: %s does not crash without an engine' % keyname, ok, err)
+finally:
+    player_mod.api_key = _player_api_key
 
 s = Session()
 pm = player_mod.FarsiPlayer(s, ITEM_MOVIE)

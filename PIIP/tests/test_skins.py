@@ -353,10 +353,10 @@ check('emblem is centred like the reference', lx + lw // 2 == 960 and ly == 80,
 check('emblem is the reference 450px square', (lw, lh) == (450, 450))
 lst = next(w for w in root.iter('widget') if w.get('name') == 'list')
 check('sources list sits where the reference puts it',
-      lst.get('position') == '460,550' and lst.get('size') == '1000,420',
+      lst.get('position') == '460,540' and lst.get('size') == '1000,360',
       '%s %s' % (lst.get('position'), lst.get('size')))
 check('a pane is drawn behind the sources list',
-      any(e.get('position') == '460,550' and e.get('size') == '1000,420'
+      any(e.get('position') == '460,540' and e.get('size') == '1000,360'
           for e in list(root.iter('eLabel')) + list(root.iter('ePixmap'))))
 check('the hint names BLUE search as the reference does',
       'BLUE - Search' in built['iptvorg'])
@@ -373,7 +373,7 @@ finally:
     textlist_mod.E2ListSource = old_rich
 ET.fromstring(rich_xml)
 check('receiver listbox centres 40px rows',
-      'RT_HALIGN_CENTER' in rich_xml and 'gFont(&quot;Regular&quot;,40)' in rich_xml
+      'RT_HALIGN_CENTER' in rich_xml and 'gFont(&quot;Regular&quot;,34)' in rich_xml
       and 'render="Listbox"' in rich_xml, rich_xml[-400:])
 setup_root = ET.fromstring(built['serversetup'])
 setup_list = next(w for w in setup_root.iter('widget') if w.get('name') == 'list')

@@ -61,6 +61,13 @@ class AudioEngine(EngineProcesses):
             dub_audio_stream = "1:a:0"
             args.extend([
                 "-thread_queue_size", "1024",
+            ])
+            if context.get("playback_realtime", False):
+                # Optional pacing for sources with reliable timestamps.
+                # Live IPTV on this OE receiver lost both audio components
+                # with this enabled, so the normal path leaves it off.
+                args.append("-re")
+            args.extend([
                 "-probesize", "1000000", "-analyzeduration", "1000000",
                 "-scan_all_pmts", "1", "-f", "mpegts", "-i", "pipe:0",
                 "-thread_queue_size", "256", "-f", "s16le", "-ar", "24000",
@@ -267,12 +274,16 @@ class AudioEngine(EngineProcesses):
             stdout=subprocess.PIPE, latency_sensitive=True,
         )
         self.relay_process.stdout.close()
-        # Source TS is already paced by the timestamped relay. Applying a
-        # smoothed byte-rate clock again starves VBR pictures/AAC together.
+        # The delay relay follows packet arrival, which lets a whole HLS
+        # segment emerge in one burst. Pace the *finished* OE TS by its PCR
+        # here, after mixing, so UDP audio remains independent of FFmpeg's
+        # input read rate.
         http_args = [
             context["worker_python"], "-u", context["http_relay"],
             str(context["http_port"]), context["http_state_file"],
         ]
+        if context["is_oe_alliance"]:
+            http_args.append("pcr")
         self.http_process = r["spawn"](
             http_args, stdin=self.playback_process.stdout,
             latency_sensitive=True,
@@ -288,7 +299,7 @@ class AudioEngine(EngineProcesses):
             (self.fixed_delay, float(context["audio_sync_correction"]),
              "single-mixed-aac" if context["is_oe_alliance"]
              else "dual-track-aac",
-             "off",
+             "pcr" if context["is_oe_alliance"] else "off",
              "dvb-direct" if direct_dvb else "streamproxy")
         )
         return True

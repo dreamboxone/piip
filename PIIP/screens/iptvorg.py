@@ -40,10 +40,10 @@ def build_skin():
         'FarsiIPTVOrg', TITLE, buttons=[('SEARCH', '#2a1a5a'),
                                         ('ADD SERVER', sk.BTN_GREEN)],
         hint='OK - Select    BLUE - Search    GREEN - Add    EXIT - Back',
-        hint_x=1120, hint_width=760, header_widget='head', item_height=70,
+        hint_x=1120, hint_width=760, header_widget='head', item_height=60,
         layout='sources', backdrop='bg_m3u.png', logo_widget='logo',
         extra=(flag,))
-    return textlist.listbox(xml, font=40, align='center')
+    return textlist.listbox(xml, font=34, align='center')
 
 
 class FarsiIPTVOrg(Screen):

@@ -997,23 +997,24 @@ class Engine(object):
                 rec['gem_send_ms'] = g.send_max_ms
                 rec['gem_stale_s'] = round(g.stale_dropped / 32000.0, 1)
                 g.send_max_ms = 0
-            rec['silence_skipped_s'] = round(
-                m.silence_skipped / float(mx.OUT_BPS), 1)
-            rec['pause_trimmed_s'] = round(m.pause_trimmed / float(mx.OUT_BPS), 1)
-            # Keep room for everything already waiting in the delay line.
-            m.translated.max_backlog = max(
-                float(self.cfg['max_backlog']),
-                m.original.pending() / float(mx.OUT_BPS) + 6.0)
-            rec['position'] = round(m.position(), 2)
-            rec['input_pos'] = round(self.input_position(), 2)
-            rec['extra_delay'] = self.extra_delay
-            rec['restarts'] = self.restarts
-            rec['trans_waiting'] = bool(m.translated.waiting)
-            rec['trans_late_ms'] = int(m.translated.lateness * 1000)
-            rec['late_dropped_ms'] = int(
-                m.translated.late_dropped_bytes * 1000 / mx.OUT_BPS)
-            if self.gemini is not None:
-                rec['sent_pos'] = round(self.gemini.sent_position, 2)
+            if m is not None:
+                rec['silence_skipped_s'] = round(
+                    m.silence_skipped / float(mx.OUT_BPS), 1)
+                rec['pause_trimmed_s'] = round(m.pause_trimmed / float(mx.OUT_BPS), 1)
+                # Keep room for everything already waiting in the delay line.
+                m.translated.max_backlog = max(
+                    float(self.cfg['max_backlog']),
+                    m.original.pending() / float(mx.OUT_BPS) + 6.0)
+                rec['position'] = round(m.position(), 2)
+                rec['input_pos'] = round(self.input_position(), 2)
+                rec['extra_delay'] = self.extra_delay
+                rec['restarts'] = self.restarts
+                rec['trans_waiting'] = bool(m.translated.waiting)
+                rec['trans_late_ms'] = int(m.translated.lateness * 1000)
+                rec['late_dropped_ms'] = int(
+                    m.translated.late_dropped_bytes * 1000 / mx.OUT_BPS)
+                if self.gemini is not None:
+                    rec['sent_pos'] = round(self.gemini.sent_position, 2)
             for name, proc in (('engine', None), ('ffin', self.ff_in),
                                ('mux', self.ff_out)):
                 pid = os.getpid() if proc is None else getattr(proc, 'pid', None)

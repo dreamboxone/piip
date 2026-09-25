@@ -249,6 +249,9 @@ class DubPipeline(object):
                 pass
         self._write_key()
         cfg = dict(self.source_cfg)
+        # Keep a live HLS source at the playlist edge. -re on this ingest
+        # makes its segment requests expire (HTTP 404) while FFmpeg is still
+        # pacing older media. The RAM relay supplies the viewer's A/V delay.
         cfg.update({'translate': False, 'passthrough': True})
         self.source = EngineHandle(cfg)
         if not self.source.start():
@@ -283,6 +286,7 @@ class DubPipeline(object):
             'translated_audio_pid': TRANSLATED_PID,
             'original_audio_pid': ORIGINAL_PID,
             'is_oe_alliance': is_oe_alliance(),
+            'playback_realtime': False,
         }
         self._log('capture: %s' % context['capture_backend']['mode'])
         self.engine = AudioEngine({'spawn': self._spawn, 'log': self._log})
@@ -360,6 +364,13 @@ class DubPipeline(object):
                     os.killpg(proc.pid, 9)
                 except Exception:
                     pass
+        # poll() reaps a child after it exits. Without this pass a process
+        # killed at the deadline remains a zombie in Enigma2 after each red
+        # key toggle.
+        reap_deadline = time.time() + 1.0
+        for proc in self.processes():
+            while proc.poll() is None and time.time() < reap_deadline:
+                time.sleep(0.05)
         if self.engine is not None:
             self.engine.clear()
         self.engine = None
