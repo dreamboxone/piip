@@ -33,7 +33,7 @@ SOURCE = os.path.join(ROOT, 'PIIP')
 RELEASE = os.path.join(ROOT, 'release', 'PIIP')
 
 PACKAGE = 'enigma2-plugin-extensions-piip'
-VERSION = '1.0.18'
+VERSION = '1.0.19'
 ARCH = 'all'
 INSTALL_DIR = 'usr/lib/enigma2/python/Plugins/Extensions/PIIP'
 

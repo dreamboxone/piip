@@ -30,9 +30,11 @@ clock.feed(10.0, stream[:277])
 clock.feed(10.0, stream[277:])
 assert len(clock.anchors) == 7, list(clock.anchors)
 print('  PASS  PCR is found across split TS packets')
-assert 27000 < clock.budget(10.0, len(stream)) < 29000
-print('  PASS  decoder receives 150 ms of media before playback')
-assert clock.budget(10.1, len(stream)) > clock.budget(10.0, len(stream))
+assert clock.budget(11.5, len(stream)) == 0
+print('  PASS  an HLS pause does not flush the startup reservoir')
+assert 27000 < clock.budget(13.8, len(stream)) < 29000
+print('  PASS  decoder receives 150 ms of media after startup buffering')
+assert clock.budget(13.9, len(stream)) > clock.budget(13.8, len(stream))
 print('  PASS  decoder lead stays ahead of the wall clock')
-assert clock.budget(10.3, len(stream)) > clock.budget(10.1, len(stream))
+assert clock.budget(14.1, len(stream)) > clock.budget(13.9, len(stream))
 print('  PASS  packet budget advances with PCR time')

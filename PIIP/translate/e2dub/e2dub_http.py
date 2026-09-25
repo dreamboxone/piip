@@ -222,6 +222,7 @@ class PcrPacer(object):
 
     PCR_WRAP = (1 << 33) * 300
     DECODER_LEAD_SECONDS = 0.35
+    STARTUP_BUFFER_SECONDS = 4.0
 
     def __init__(self):
         self.seen = 0
@@ -229,6 +230,7 @@ class PcrPacer(object):
         self.anchors = collections.deque()
         self.last_pcr = None
         self.last_pcr_wall = None
+        self.last_pcr_offset = None
         self.media_seconds = 0.0
         self.wall_start = None
 
@@ -257,9 +259,13 @@ class PcrPacer(object):
                         if 0 < delta < 27000000:
                             self.media_seconds += delta / 27000000.0
                     else:
-                        self.wall_start = float(now) + 0.20
+                        # HLS arrives in multi-second bursts. Keep four
+                        # seconds of complete TS ahead of the decoder so the
+                        # next segment can arrive before its frames are due.
+                        self.wall_start = float(now) + self.STARTUP_BUFFER_SECONDS
                     self.last_pcr = ticks
                     self.last_pcr_wall = float(now)
+                    self.last_pcr_offset = base + index
                     self.anchors.append((base + index,
                                          self.media_seconds))
             index += TS_PACKET_BYTES
@@ -269,9 +275,10 @@ class PcrPacer(object):
     def budget(self, now, pending_bytes):
         if not pending_bytes:
             return 0
-        if (self.last_pcr_wall is not None and
-                float(now) - self.last_pcr_wall > 1.0):
-            # A source without ongoing PCR must not strand the TV on black.
+        if (self.last_pcr_offset is not None and
+                self.seen - self.last_pcr_offset > HTTP_IO_BYTES * 4):
+            # Fall back only if data keeps arriving without PCR. HLS pauses
+            # between segments are not evidence of a missing PCR clock.
             return min(pending_bytes, HTTP_IO_BYTES)
         pending_start = self.seen - pending_bytes
         while len(self.anchors) > 2 and self.anchors[1][0] <= pending_start:
