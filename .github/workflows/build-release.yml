@@ -1,0 +1,76 @@
+name: Build and release PIIP
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish (optional)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' && inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run plugin checks
+        env:
+          PYTHONUTF8: '1'
+        run: python PIIP/tests/run_all.py
+
+      - name: Build and verify packages
+        run: |
+          python packaging/build_ipk.py
+          python packaging/build_deb.py
+          python packaging/verify_deb.py
+          cd dist
+          sha256sum *.ipk *.deb > SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: piip-packages
+          path: |
+            dist/*.ipk
+            dist/*.deb
+            dist/SHA256SUMS
+
+      - name: Check release tag matches package version
+        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          sys.path.insert(0, 'packaging')
+          from build_deb import VERSION
+          tag = os.environ['RELEASE_TAG']
+          if tag != 'v' + VERSION:
+              raise SystemExit('Tag %s does not match package %s' % (tag, VERSION))
+          PY
+
+      - name: Publish release assets
+        if: ${{ github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.tag != '') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --draft --generate-notes
+          fi
+          gh release upload "$RELEASE_TAG" dist/*.ipk dist/*.deb dist/SHA256SUMS --clobber
+          gh release edit "$RELEASE_TAG" --draft=false
