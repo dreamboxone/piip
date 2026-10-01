@@ -31,6 +31,7 @@ from ..utils.uisafe import safe_actions, BackgroundTask
 from ..utils import skin as sk
 from ..utils import image as image_cache
 from ..utils.backdrop import backdrop
+from ..utils import storage
 from ..utils.compat import native
 from ..utils.content import allowed
 
@@ -287,7 +288,7 @@ class FarsiChannels(Screen):
         if item and item.logo:
             try:
                 logo = image_cache.download(item.logo,
-                    native(_c.picon_cache_dir.value or '/tmp/piip-cache'),
+                    storage.cache_dir(native(_c.picon_cache_dir.value or '')),
                     timeout=10)
             except Exception:
                 logo = ''

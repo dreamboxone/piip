@@ -398,5 +398,56 @@ finally:
     dub.subprocess.Popen = real_popen
     dub._MUXERS.clear()
 
+# ------------------- a receiver with no disk: /media/hdd is the boot flash
+# A power cut during playback used to catch the root filesystem mid-write,
+# because every playback logged to /media/hdd once a second.
+from PIIP.utils import storage, diaglog                        # noqa: E402
+
+DEVICES = {'/': 1, '/tmp': 2, '/media/hdd': 1, '/media/usb': 3}
+
+
+def device_of(path):
+    probe = path
+    while probe not in DEVICES and probe not in ('', '/'):
+        probe = os.path.dirname(probe)
+    return DEVICES.get(probe, DEVICES['/'])
+
+
+real_device = storage._device
+storage._device = device_of
+try:
+    check('an unmounted /media/hdd is the flash', storage.on_flash('/media/hdd'))
+    check('a folder that does not exist yet is judged by its parent',
+          storage.on_flash('/media/hdd/piip_diag/new'))
+    check('a mounted USB stick is a disk', storage.on_disk('/media/usb/x'))
+    check('RAM is not the flash', not storage.on_flash('/tmp/piip_diag'))
+    check('and RAM is not a disk either', not storage.on_disk('/tmp'))
+    check('artwork goes to RAM when the cache folder is on the flash',
+          storage.cache_dir('/media/hdd/.piip_cache/') == '/tmp/piip-cache')
+    check('artwork stays on a real disk when there is one',
+          storage.cache_dir('/media/usb/cache') == '/media/usb/cache')
+
+    created = []
+    real_writable = diaglog._writable
+    diaglog._writable = lambda folder: created.append(folder) or True
+    try:
+        chosen = diaglog.root()
+        check('playback logs never land on the flash', chosen == '/media/usb/piip_diag',
+              chosen)
+        check('the flash folder is not even created to test it',
+              '/media/hdd/piip_diag' not in created, repr(created))
+        DEVICES['/media/usb'] = 1                       # unplug the stick
+        check('with no disk at all the logs go to RAM',
+              diaglog.root() == '/tmp/piip_diag')
+    finally:
+        diaglog._writable = real_writable
+        DEVICES['/media/usb'] = 3
+
+    storage._device = lambda path: None
+    check('anything that cannot be checked counts as flash',
+          storage.on_flash('/media/hdd'))
+finally:
+    storage._device = real_device
+
 print('\n%d checks, %d failed' % (len(RUN), len(FAIL)))
 sys.exit(1 if FAIL else 0)

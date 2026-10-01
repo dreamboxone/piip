@@ -95,6 +95,17 @@ def start(entry_id):
     chosen = next((x for x in items if x.get('id') == entry_id), None)
     if not chosen:
         return False
+    # A film is gigabytes. On a receiver with no disk the download folder is
+    # the flash the image boots from, and filling it leaves a receiver that
+    # will not start again until it is flashed. Refuse rather than begin.
+    from .storage import on_flash
+    if on_flash(os.path.dirname(chosen['path'])):
+        chosen['status'] = 'failed'
+        chosen['error'] = ('no disk: %s is on the internal flash; '
+                           'plug in a USB stick or a disk'
+                           % os.path.dirname(chosen['path']))
+        save(items)
+        return False
     log = open(chosen['path'] + '.log', 'ab')
     proc = subprocess.Popen(['curl', '-L', '--fail', '--retry', '3', '-C', '-',
                              '-A', 'Mozilla/5.0', '-o', chosen['path'], chosen['url']],

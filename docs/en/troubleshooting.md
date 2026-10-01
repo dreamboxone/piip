@@ -48,6 +48,22 @@ raises the decoder's buffer to 5 seconds to absorb short hiccups. If you still
 see it, note the time and look at `/tmp/piip_dub.log` around it — the line
 `Native Enigma2 HTTP/TS client connected` marks each reattachment.
 
+### The receiver did not start after a power cut during translation
+
+Versions before 1.0.8 logged every playback to `/media/hdd` once a second. On a
+receiver with no disk that folder is the flash the image boots from, so a power
+cut at the wrong moment could damage the image itself — and only flashing it
+again brought the receiver back.
+
+1.0.8 never writes to the flash: with no disk, its logs and its artwork cache
+live in RAM. Install it on every receiver that has no disk or USB stick.
+
+To see whether a disk is really mounted:
+
+```bash
+grep " /media/hdd " /proc/mounts || echo "no disk: /media/hdd is the internal flash"
+```
+
 ---
 
 ## Translation

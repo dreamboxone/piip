@@ -36,6 +36,9 @@ import threading
 import time
 
 ROOTS = ('/media/hdd/piip_diag', '/media/usb/piip_diag', '/tmp/piip_diag')
+RAM_ROOT = '/tmp/piip_diag'
+# In RAM the sessions cost memory, so fewer of them are kept.
+KEEP_IN_RAM = 3
 # A running watch (translate/diag.py start) announces itself here. The
 # marker is in /tmp on purpose: it must not outlive the boot it belongs to.
 MARKER = '/tmp/piip_diag.active'
@@ -59,7 +62,19 @@ def _writable(folder):
 
 
 def root():
+    """Where session folders go: a plugged-in disk, otherwise RAM.
+
+    Every playback writes here once a second. A /media/hdd with no disk
+    behind it is the receiver's own flash, and a power cut in the middle of
+    those writes could leave an image that no longer boots. So a /media
+    folder is used only when storage.on_disk() says a real disk is mounted
+    there -- checked before anything is created, because even probing used
+    to make the folder on the flash.
+    """
+    from .storage import on_disk
     for folder in ROOTS:
+        if folder.startswith('/media/') and not on_disk(os.path.dirname(folder)):
+            continue
         if _writable(folder):
             return folder
     return '/tmp'
@@ -104,7 +119,9 @@ def new_dir(kind='play', label=''):
     return path
 
 
-def prune(base, keep=KEEP):
+def prune(base, keep=None):
+    if keep is None:
+        keep = KEEP_IN_RAM if base.startswith('/tmp') else KEEP
     try:
         names = sorted(n for n in os.listdir(base)
                        if os.path.isdir(os.path.join(base, n)))

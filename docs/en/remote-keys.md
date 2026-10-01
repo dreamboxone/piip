@@ -24,6 +24,10 @@
 
 ### The information panel
 
+A red label just above the panel, **RED  Translation on / off**, is a reminder
+of the one key you will use most.
+
+
 The panel at the bottom of the screen disappears on its own **five seconds
 after the picture appears**, and any key brings it back for another five.
 

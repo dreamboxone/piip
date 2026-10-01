@@ -40,6 +40,7 @@ from ..utils.backdrop import backdrop
 from .player import FarsiPlayer
 from ..utils.uisafe import safe_actions, BackgroundTask
 from ..utils import skin as sk
+from ..utils import storage
 from ..utils.compat import native
 from ..utils.content import allowed
 from ..utils import downloads
@@ -506,7 +507,7 @@ class LoadingScreen(Screen):
             return ''
         if os.path.isfile(url):
             return url
-        directory = native(_c.picon_cache_dir.value or '/tmp/piip-cache')
+        directory = storage.cache_dir(native(_c.picon_cache_dir.value or ''))
         for ext in (image_cache.suffix(url), '.png', '.jpg'):
             # The download names the file after what arrived, so a .jpg
             # address that served a PNG is cached as .png.
@@ -521,7 +522,7 @@ class LoadingScreen(Screen):
 
     def _pageArtWorker(self):
         token = self._page_art_token
-        directory = native(_c.picon_cache_dir.value or '/tmp/piip-cache')
+        directory = storage.cache_dir(native(_c.picon_cache_dir.value or ''))
         loaded = []
         for item in list(self.visible()):
             url = native(getattr(item, 'logo', '') or '')
@@ -552,7 +553,7 @@ class LoadingScreen(Screen):
             from Tools.LoadPixmap import LoadPixmap
         except ImportError:
             LoadPixmap = None
-        directory = native(_c.picon_cache_dir.value or '/tmp/piip-cache')
+        directory = storage.cache_dir(native(_c.picon_cache_dir.value or ''))
         rows = []
         for item in shown:
             poster = None
@@ -741,7 +742,7 @@ class LoadingScreen(Screen):
 
     def _art_worker(self):
         token, item, urls = self._pending_art
-        directory = native(_c.picon_cache_dir.value or '/tmp/piip-cache')
+        directory = storage.cache_dir(native(_c.picon_cache_dir.value or ''))
         metadata = {}
         if (item is not None and _c.source.value == 'xtream' and
                 item.kind == MOVIE and item.item_id and

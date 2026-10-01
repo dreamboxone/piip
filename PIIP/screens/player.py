@@ -75,7 +75,7 @@ SUB_COLOR = {'white': '#00ffffff', 'yellow': '#00ffff00', 'green': '#0080ff80'}
 OSD_WIDGETS = ('osd_bg', 'channel', 'state', 'bitrate', 'picon', 'cover',
                'bar_pos', 'time', 'epg', 'epg_next', 'hint', 'streamcat',
                'streamtype', 'extension', 'clock', 'vwidth', 'vheight',
-               'vfps', 'vcodec', 'vaspect', 'vtag')
+               'vfps', 'vcodec', 'vaspect', 'vtag', 'redkey')
 
 # The panel covers a third of the picture, so it leaves on its own; any key
 # brings it back for another five seconds.
@@ -258,6 +258,13 @@ def build_skin():
         '<widget name="clock" position="%d,%d" size="%d,%d" font="Regular;%d" '
         'foregroundColor="#ffffff" transparent="1" zPosition="3"/>'
         % (q(1560), q(888), q(318), q(48), q(30)))
+    # The one key that matters most, in the colour of the key itself, on
+    # the picture just above the panel and leaving with it.
+    parts.append(
+        '<widget name="redkey" position="%d,%d" size="%d,%d" font="Regular;%d" '
+        'foregroundColor="#ffffff" backgroundColor="#00c81e1e" halign="center" '
+        'valign="center" transparent="0" cornerRadius="%d" zPosition="3"/>'
+        % (q(321), q(816), q(360), q(38), q(24), q(10)))
     return ('<screen name="FarsiPlayer" position="0,0" size="%d,%d" flags="wfNoBorder" '
             'backgroundColor="#ff000000" title="PIIP">\n%s\n</screen>' %
             (W, H, '\n'.join(parts)))
@@ -344,6 +351,7 @@ class FarsiPlayer(Screen):
         for name in ('vwidth', 'vheight', 'vfps', 'vcodec', 'vaspect', 'vtag'):
             self[name] = Label('')
         self['clock'] = Label('')
+        self['redkey'] = Label(native('RED   Translation on / off'))
         self['epg'] = Label('')
         self['epg_next'] = Label('')
         self['bar_pos'] = ProgressBar()

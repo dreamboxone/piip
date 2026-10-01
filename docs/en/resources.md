@@ -45,6 +45,24 @@ by *Poster / Art Cache Directory* in the settings.
 
 ---
 
+## Nothing is written to the receiver's own flash
+
+`/media/hdd` exists on every Enigma2 image, disk or no disk. Without one it is
+an empty folder on the flash the image boots from. PIIP checks whether a real
+disk is mounted there before writing anything:
+
+| What | With a disk or USB stick | Without one |
+|---|---|---|
+| Playback diagnostics | on the disk | in RAM (`/tmp`), last 3 sessions only |
+| Posters and logos | on the disk | in RAM (`/tmp/piip-cache`) |
+| Film downloads | on the disk | **refused**, with a message saying why |
+
+Writing to the flash continuously while translating is what let a power cut
+leave a receiver that would not start again. Version 1.0.8 removes it, and its
+installer clears what earlier versions left there.
+
+---
+
 ## Memory
 
 Enigma2 itself used 198 MB on the test receiver with the plugin loaded. On top

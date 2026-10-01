@@ -17,6 +17,7 @@ from ..plugin import config
 from ..providers import iptvorg
 from ..utils import servers, skin as sk, textlist
 from ..utils.backdrop import backdrop, load as load_icon
+from ..utils import storage
 from ..utils.compat import native
 from ..utils.uisafe import BackgroundTask, safe_actions
 from ..utils import image as image_cache
@@ -165,7 +166,7 @@ class FarsiIPTVOrg(Screen):
         code = self.flag_code
         path = image_cache.download(
             'https://flagcdn.com/w160/%s.png' % code,
-            native(_c.picon_cache_dir.value or '/tmp/piip-cache'), timeout=10)
+            storage.cache_dir(native(_c.picon_cache_dir.value or '')), timeout=10)
         return code, path
 
     def flagReady(self, result, error):

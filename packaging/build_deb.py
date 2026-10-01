@@ -33,7 +33,7 @@ SOURCE = os.path.join(ROOT, 'PIIP')
 RELEASE = os.path.join(ROOT, 'release', 'PIIP')
 
 PACKAGE = 'enigma2-plugin-extensions-piip'
-VERSION = '1.0.19'
+VERSION = '1.0.20'
 ARCH = 'all'
 INSTALL_DIR = 'usr/lib/enigma2/python/Plugins/Extensions/PIIP'
 
@@ -110,6 +110,17 @@ fi
 echo "    Telegram: https://t.me/routekernel1"
 echo "    YouTube : https://youtube.com/@routekernel"
 echo ""
+
+# Earlier versions logged every playback to /media/hdd, which on a receiver
+# with no disk is the flash the image boots from. Give that space back --
+# only PIIP's own folders, and only when no disk is mounted there.
+if ! grep -q " /media/hdd " /proc/mounts 2>/dev/null; then
+    if [ -d /media/hdd/piip_diag ] || [ -d /media/hdd/.piip_cache ]; then
+        echo "    Removing PIIP logs left on the internal flash by older versions."
+        rm -rf /media/hdd/piip_diag /media/hdd/.piip_cache
+        echo ""
+    fi
+fi
 
 # The installer package is no longer needed once it is unpacked.
 rm -f /tmp/enigma2-plugin-extensions-piip_*.deb 2>/dev/null || true
