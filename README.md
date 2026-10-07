@@ -133,3 +133,18 @@ On a receiver with 2 GB of RAM this leaves well over a gigabyte free.
 
 © 2026 Routekernel. All rights reserved. Use and redistribution are governed
 by [LICENSE](LICENSE).
+
+---
+
+## 💚 Support this project
+
+If this project has been useful to you, you can support it with Tether:
+
+**USDT — BEP20 (BSC) network only**
+
+```
+0x56daaa6b76d88ee0c8dba8042121f4b77de0a813
+```
+
+> [!WARNING]
+> This address is for USDT on the BEP20 (BSC) network only. Any other coin, or USDT sent over any other network, is lost.
