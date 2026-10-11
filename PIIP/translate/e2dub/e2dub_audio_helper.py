@@ -139,6 +139,7 @@ AUDIO_SYNC_CORRECTION_SECONDS = command_line_float(
     sys.argv[1:], "--sync-correction", 0.0, -2.0, 4.0
 )
 ADAPTIVE_STARTUP = "--adaptive-startup" in sys.argv[1:]
+CONTINUOUS_FEED = "--continuous-feed" in sys.argv[1:]
 RELAY_STATE_FILE = "/tmp/e2dub-audio-relay-state"
 try:
     RELAY_STATE_FILE = sys.argv[sys.argv.index("--relay-state-file") + 1]
@@ -615,6 +616,7 @@ class AdaptivePlayout(object):
                     jitter_ms=int(self.jitter * 1000), underruns=self.underruns,
                     silence_trimmed_ms=int(self.trimmed_samples / 24),
                     time_saved_ms=int(self.compressed_samples / 24),
+                    played_pcm_ms=int(self.played_samples / 24),
                     overflow_ms=int(self.buffer.dropped_size() / 48))
 
 class WebSocketClosed(IOError):
@@ -1115,7 +1117,8 @@ class WebSocket(object):
 
 
 STOP = threading.Event()
-INPUT_QUEUE = queue.Queue(50)
+INPUT_QUEUE = queue.Queue(int((PLAYBACK_DELAY_SECONDS + 6.0) * 10)
+                          if CONTINUOUS_FEED else 50)
 INPUT_READY = threading.Event()
 # Include intentional A/V waiting in the cap; a long user sync correction
 # must not discard speech before its first presentation deadline. <= 864 KB
@@ -1135,6 +1138,7 @@ STREAM_ACCEPTING_INPUT = threading.Event()
 INPUT_DISCONNECTED_DROPS = [0]
 INPUT_QUEUE_FULL_DROPS = [0]
 INPUT_STALE_DROPS = [0]
+INPUT_PAUSED_DROPS = [0]
 RECV_SPEECH_AT = [0.0]      # last translated speech that arrived
 MODEL_IDLE_AT = [0.0]       # last time the model had nothing left to say
 RESYNC_REQUEST = [False]    # a drain that never finished: rebuild the session
@@ -1257,6 +1261,17 @@ class MatroskaPCMExtractor(object):
         return output
 
 
+class PCMInputClock(object):
+    """Pace decoded bursts, and re-anchor after an actual source outage."""
+    def __init__(self):
+        self.next_due = None
+
+    def stamp(self, arrived):
+        due = max(arrived, self.next_due if self.next_due is not None else arrived)
+        self.next_due = due + INPUT_CHUNK_BYTES / 32000.0
+        return due
+
+
 def stdin_reader():
     pending = bytearray()
     extractor = MatroskaPCMExtractor() if MATROSKA_PCM_MODE else None
@@ -1267,6 +1282,7 @@ def stdin_reader():
     preroll = []
     paused_at = 0.0
     fed_since = steady_time()
+    input_clock = PCMInputClock()
     set_input_state("waiting", 0, 0.0)
     while not STOP.is_set():
         try:
@@ -1296,6 +1312,10 @@ def stdin_reader():
                 captured_at = steady_time()
                 if SOURCE_CAPTURE_ANCHOR[0] is None:
                     SOURCE_CAPTURE_ANCHOR[0] = captured_at
+                # HLS decoding emits a whole segment in a burst. Its later
+                # samples belong to later media time, not this arrival instant.
+                media_at = (input_clock.stamp(captured_at)
+                            if CONTINUOUS_FEED else captured_at)
                 speaking = pcm_has_meaningful_signal(raw)
                 if speaking:
                     signal_frames += 1
@@ -1314,7 +1334,7 @@ def stdin_reader():
                 # Silence costs the model as much rendering time as speech
                 # does, and it has none to spare. Send speech with a short
                 # run-up and tail; hold the rest back as catch-up time.
-                send = [(raw, source_start, source_end, captured_at)]
+                send = [(raw, source_start, source_end, media_at)]
                 if INPUT_SILENCE_GATE:
                     if speaking:
                         send = list(preroll) + send
@@ -1329,7 +1349,7 @@ def stdin_reader():
                 # A/V reserve. The reserve itself is intentional, not drift.
                 idle = MODEL_IDLE_AT[0]
                 if FEEDING[0]:
-                    if (TRANSLATED_OUTPUT_STARTED.is_set() and
+                    if (not CONTINUOUS_FEED and TRANSLATED_OUTPUT_STARTED.is_set() and
                             should_probe_backlog(captured_at, fed_since,
                                                  PLAYOUT_METRICS[0])):
                         FEEDING[0] = False
@@ -1353,7 +1373,10 @@ def stdin_reader():
                         RESYNC_REQUEST[0] = True
                         log("Backlog still not clear after %.0fs; asking for a "
                             "new session on live audio" % DRAIN_MAX_SECONDS)
-                if not FEEDING[0] or not STREAM_ACCEPTING_INPUT.is_set():
+                if not FEEDING[0] or (not CONTINUOUS_FEED and
+                                     not STREAM_ACCEPTING_INPUT.is_set()):
+                    if send and not FEEDING[0]:
+                        INPUT_PAUSED_DROPS[0] += len(send)
                     if send and not STREAM_ACCEPTING_INPUT.is_set():
                         INPUT_DISCONNECTED_DROPS[0] += len(send)
                     send = []
@@ -1466,7 +1489,12 @@ def pcm_writer():
                 metrics.update(updated_monotonic=now, playback_delay_ms=(
                     int(playback_delay * 1000) if playback_delay is not None else None))
                 metrics.update(clock_late_max_ms=clock_late_max_ms,
-                               udp_drops=OUTPUT_UDP_DROPS[0])
+                               udp_drops=OUTPUT_UDP_DROPS[0],
+                               last_returned_speech_monotonic=RECV_SPEECH_AT[0],
+                               input_stale_drops=INPUT_STALE_DROPS[0],
+                               input_queue_full_drops=INPUT_QUEUE_FULL_DROPS[0],
+                               input_disconnected_drops=INPUT_DISCONNECTED_DROPS[0],
+                               input_paused_drops=INPUT_PAUSED_DROPS[0])
                 PLAYOUT_METRICS[0] = metrics
                 path = STATE_FILE + '-playout'
                 temporary = path + '.tmp'
@@ -1722,7 +1750,7 @@ def connect_and_stream(api_key, profile, attempt, result,
             MODEL_IDLE_AT[0] = steady_time()
             RECV_SPEECH_AT[0] = 0.0
             RESYNC_REQUEST[0] = False
-        startup_dropped = discard_queued_input()
+        startup_dropped = 0 if CONTINUOUS_FEED else discard_queued_input()
         STREAM_ACCEPTING_INPUT.set()
         if startup_dropped:
             log("Discarded %d source frames captured during setup"
@@ -1741,6 +1769,14 @@ def connect_and_stream(api_key, profile, attempt, result,
                 if isinstance(chunk, tuple) and len(chunk) == 4:
                     chunk, source_start, source_end, captured_at = chunk
                 input_age_allowance = AUDIO_INPUT_MAX_AGE_SECONDS
+                if CONTINUOUS_FEED:
+                    input_age_allowance = max(input_age_allowance,
+                                              PLAYBACK_DELAY_SECONDS)
+                    while (captured_at is not None and captured_at > steady_time()
+                           and not STOP.is_set() and not dead.is_set()):
+                        STOP.wait(min(.1, captured_at - steady_time()))
+                    if STOP.is_set() or dead.is_set():
+                        break
                 if resume:
                     input_age_allowance = max(
                         input_age_allowance,

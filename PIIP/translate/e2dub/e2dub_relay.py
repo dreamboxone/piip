@@ -18,6 +18,11 @@ import sys
 import time
 
 try:
+    from .e2dub_http import PcrPacer
+except (ImportError, ValueError):
+    from e2dub_http import PcrPacer
+
+try:
     import fcntl
 except ImportError:  # Imported by Windows unit tests; runtime is Linux.
     fcntl = None
@@ -363,7 +368,7 @@ class StartupDelay(object):
 
 
 def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
-        audio_startup_state=None):
+        audio_startup_state=None, source_pacing=False):
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
     set_nonblocking(1)
@@ -373,6 +378,12 @@ def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
     destination = ("127.0.0.1", int(live_port))
     delay = DelayBuffer(delay_seconds)
     live_pending = bytearray()
+    source_pending = bytearray()
+    source_clock = PcrPacer() if source_pacing else None
+    if source_clock is not None:
+        # Both branches consume the same media clock. A segment arriving in
+        # one burst must not overrun the capture socket or leave a video gap.
+        source_clock.DECODER_LEAD_SECONDS = 0.02
     output_pending = bytearray()
     received = 0
     live_drops = 0
@@ -382,6 +393,10 @@ def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
     last_startup_read = 0.0
     selected_delay = None if startup else delay_seconds
     last_log = started
+    last_state = started
+    last_input = None
+    last_output = None
+    output_bytes = 0
     read_bytes = READ_BYTES
     ready = False
     set_state(
@@ -397,12 +412,25 @@ def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
         while not STOP[0]:
             now = steady_time()
             if incoming:
+                last_input = now
                 received += len(incoming)
-                live_pending.extend(bytearray(incoming))
+                if source_clock is not None:
+                    if len(source_pending) + len(incoming) > MAX_DELAY_BYTES:
+                        raise IOError('source pacing RAM ceiling reached')
+                    source_clock.feed(now, incoming)
+                    source_pending.extend(bytearray(incoming))
+                else:
+                    source_pending.extend(bytearray(incoming))
+                incoming = b""
+            budget = (source_clock.budget(now, len(source_pending))
+                      if source_clock is not None else len(source_pending))
+            if budget:
+                paced = to_bytes(source_pending[:budget])
+                del source_pending[:budget]
+                live_pending.extend(bytearray(paced))
                 _sent, dropped = send_live(udp, destination, live_pending)
                 live_drops += dropped
-                delay.append(now, incoming)
-                incoming = b""
+                delay.append(now, paced)
 
             if startup is not None and selected_delay is None and now - last_startup_read >= .1:
                 last_startup_read = now
@@ -426,6 +454,8 @@ def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
                     count = eintr_retry(
                         os.write, 1, to_bytes(output_pending))
                     if count:
+                        last_output = now
+                        output_bytes += count
                         del output_pending[:count]
                         if not ready:
                             ready = True
@@ -460,6 +490,10 @@ def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
                         read_bytes // TS_DATAGRAM_BYTES,
                     )
                 )
+                last_log = now
+            if now - last_state >= 1.0:
+                elapsed = max(0.001, now - started)
+                mbps = received * 8.0 / elapsed / 1000000.0
                 set_state(
                     state_file, "ready" if ready else "buffering",
                     delay_ms=int(round((selected_delay or delay_seconds) * 1000)),
@@ -470,8 +504,14 @@ def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
                     output_drops_kb=output_drops // 1024,
                     cap_drops_kb=delay.dropped_bytes // 1024,
                     source=source_kind,
+                    updated_monotonic=now, last_input_monotonic=last_input,
+                    last_output_monotonic=last_output,
+                    input_bytes=received, output_bytes=output_bytes,
+                    pending_kb=len(output_pending) // 1024,
+                    source_pending_kb=len(source_pending) // 1024,
+                    source_paced=bool(source_clock),
                 )
-                last_log = now
+                last_state = now
 
             incoming = source.read(read_bytes)
             if incoming is None:
@@ -491,6 +531,9 @@ def run(source_url, delay_seconds, live_port, state_file, dvb_pids=None,
 
 def main():
     arguments = list(sys.argv)
+    source_pacing = '--source-pacing' in arguments
+    if source_pacing:
+        arguments.remove('--source-pacing')
     audio_startup_state = None
     if '--audio-startup-state' in arguments:
         index = arguments.index('--audio-startup-state')
@@ -515,6 +558,7 @@ def main():
         return run(
             arguments[1], float(arguments[2]), int(arguments[3]), arguments[4],
             dvb_pids=dvb_pids, audio_startup_state=audio_startup_state,
+            source_pacing=source_pacing,
         )
     except Exception as error:
         detail = str(error)[:240]

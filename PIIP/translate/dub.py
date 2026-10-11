@@ -237,12 +237,17 @@ class DubPipeline(object):
     # ----------------------------------------------------------- lifecycle
 
     def start(self):
+        from ..utils.storage import require_runtime_ram
+        require_runtime_ram()
         self.stop()
         kill_leftovers()
         time.sleep(0.3)
-        self.log_handle = open(LOG, 'a')
+        from ..utils.runtimelog import ProcessLog
+        self.log_handle = ProcessLog(LOG)
         self.reported_deaths = set()
-        for path in (HELPER_STATE, RELAY_STATE, HTTP_STATE):
+        for path in (HELPER_STATE, RELAY_STATE, HTTP_STATE,
+                     '/tmp/e2dub-audio-input-state',
+                     HELPER_STATE + '-playout'):
             try:
                 os.remove(path)
             except OSError:
@@ -268,7 +273,9 @@ class DubPipeline(object):
             'capture_backend': capture_backend(self.ffmpeg),
             'target_language': self.language,
             'original_volume': self.original_volume,
-            'fixed_delay': FIXED_DELAY,
+            'fixed_delay': max(1.0, min(12.0, float(cfg.get('delay', 6.0)))),
+            'adaptive_startup': False,
+            'continuous_feed': True,
             'audio_sync_correction': 0.0,
             'worker_python': _python(),
             'key_file': KEY_FILE,
@@ -324,23 +331,38 @@ class DubPipeline(object):
     def status(self):
         helper = self.helper_state()
         state = helper.get('state', 'starting')
+        http = read_state(HTTP_STATE)
+        relay = read_state(RELAY_STATE)
+        playout = read_state(HELPER_STATE + '-playout')
+        tick = getattr(time, 'monotonic', None)
+        now = tick() if tick else os.times()[4]
+        last_output = http.get('last_output_monotonic')
+        flowing = (isinstance(last_output, (int, float)) and
+                   0 <= now - last_output < 3.0 and
+                   http.get('state') == 'ready' and bool(http.get('client')))
         return {
             'ok': True,
-            'flowing': bool(read_state(HTTP_STATE)) or
-                       time.time() - self.started_at > 8,
+            'flowing': bool(flowing),
             'gemini': {'audio': 'connected', 'streaming': 'connected'}.get(
                 state, state),
             'dub_state': state,
-            'backlog': 0.0,
+            'backlog': max(0.0, (playout.get('queued_ms', 0) -
+                               playout.get('sync_reserve_ms', 0)) / 1000.0),
             'position': 0.0,
             'helper': helper,
+            'http': http,
+            'relay': relay,
+            'playout': playout,
         }
 
     def set_gain(self, original=None, translated=None):
         return None
 
     def set_delay(self, seconds):
-        return None
+        # Changing a running TS delay skips or repeats programme packets.
+        # Apply the saved setting on the next pipeline start instead.
+        self.source_cfg['delay'] = max(1.0, min(12.0, float(seconds)))
+        return False
 
     def seek(self, seconds):
         return False

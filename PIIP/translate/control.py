@@ -58,6 +58,12 @@ class EngineHandle(object):
     # ------------------------------------------------------------ lifecycle
 
     def start(self):
+        if sys.platform.startswith('linux'):
+            try:
+                from ..utils.storage import require_runtime_ram
+            except (ImportError, ValueError):
+                from utils.storage import require_runtime_ram
+            require_runtime_ram()
         self.stop()
         cmd = [python_binary(), ENGINE, '-']
         # Never discard the engine's stderr. An engine that dies during its

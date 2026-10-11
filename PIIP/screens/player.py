@@ -1404,9 +1404,9 @@ class FarsiPlayer(Screen):
             d = 1
         _c.delay.value = d
         _c.delay.save()
-        if self.engine:
-            self.engine.set_delay(float(d))
-        self['state'].setText(native('delay %ds' % d))
+        applied = self.engine.set_delay(float(d)) if self.engine else False
+        self['state'].setText(native('delay %ds%s' % (
+            d, ' (next translation start)' if applied is False else '')))
         self.showOSD()
 
     def showStatus(self):

@@ -429,10 +429,12 @@ try:
 
     created = []
     real_writable = diaglog._writable
+    real_ram = storage.on_ram
+    storage.on_ram = lambda path: True
     diaglog._writable = lambda folder: created.append(folder) or True
     try:
         chosen = diaglog.root()
-        check('playback logs never land on the flash', chosen == '/media/usb/piip_diag',
+        check('playback logs use RAM even with a disk attached', chosen == '/tmp/piip_diag',
               chosen)
         check('the flash folder is not even created to test it',
               '/media/hdd/piip_diag' not in created, repr(created))
@@ -440,6 +442,7 @@ try:
         check('with no disk at all the logs go to RAM',
               diaglog.root() == '/tmp/piip_diag')
     finally:
+        storage.on_ram = real_ram
         diaglog._writable = real_writable
         DEVICES['/media/usb'] = 3
 

@@ -259,11 +259,16 @@ class AudioEngine(EngineProcesses):
             "--key-file", context["key_file"],
             "--playback-delay", "%.2f" % self.fixed_delay,
             "--sync-correction", "%.2f" % float(context["audio_sync_correction"]),
-            "--adaptive-startup", "--relay-state-file", context["relay_state_file"],
+            "--relay-state-file", context["relay_state_file"],
         ])
         # Choose the source A/V delay once, before releasing any TS. Both
         # relay and PCM writer use the relay's selected delay thereafter.
-        relay_args.extend(["--audio-startup-state", "/tmp/e2dub-audio-helper-state"])
+        if context.get('adaptive_startup', True):
+            helper_args.append('--adaptive-startup')
+            relay_args.extend(["--audio-startup-state", "/tmp/e2dub-audio-helper-state"])
+        if context.get('continuous_feed', False):
+            helper_args.append('--continuous-feed')
+            relay_args.append('--source-pacing')
         self.helper_process = r["spawn"](helper_args, stdin=helper_input)
         helper_input.close()
         self.relay_process = r["spawn"](
@@ -274,16 +279,13 @@ class AudioEngine(EngineProcesses):
             stdout=subprocess.PIPE, latency_sensitive=True,
         )
         self.relay_process.stdout.close()
-        # The delay relay follows packet arrival, which lets a whole HLS
-        # segment emerge in one burst. Pace the *finished* OE TS by its PCR
-        # here, after mixing, so UDP audio remains independent of FFmpeg's
-        # input read rate.
+        # FFmpeg can buffer and release a burst even with paced input. Pace
+        # the finished TS by PCR on both DreamOS and OE receivers.
         http_args = [
             context["worker_python"], "-u", context["http_relay"],
             str(context["http_port"]), context["http_state_file"],
         ]
-        if context["is_oe_alliance"]:
-            http_args.append("pcr")
+        http_args.append("pcr")
         self.http_process = r["spawn"](
             http_args, stdin=self.playback_process.stdout,
             latency_sensitive=True,
@@ -294,12 +296,12 @@ class AudioEngine(EngineProcesses):
         # does not say which, and the graph differs per image.
         r["log"]("playback: %s" % " ".join(playback_args))
         r["log"](
-            "AudioEngine started: base RAM delay=%.2fs (adaptive startup), dub correction=%+.2fs, "
+            "AudioEngine started: base RAM delay=%.2fs, dub correction=%+.2fs, "
             "receiver_audio=%s http_pacing=%s source=%s" %
             (self.fixed_delay, float(context["audio_sync_correction"]),
              "single-mixed-aac" if context["is_oe_alliance"]
              else "dual-track-aac",
-             "pcr" if context["is_oe_alliance"] else "off",
+             "pcr",
              "dvb-direct" if direct_dvb else "streamproxy")
         )
         return True

@@ -653,6 +653,9 @@ def begin(args, script=None, label='watch', job=None):
         return 1
     minutes = float(args.get('minutes') or 30)
     base = diaglog.root()
+    if base is None:
+        print('diagnostics require a verified RAM mount')
+        return 1
     folder = os.path.join(base, 'watch-%s-%s' % (
         time.strftime('%Y%m%d-%H%M%S'),
         ''.join(c if c.isalnum() else '_' for c in args.get('label') or label)[:32]))

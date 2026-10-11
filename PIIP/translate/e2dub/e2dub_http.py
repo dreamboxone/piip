@@ -333,6 +333,8 @@ def run(port, state_file, pacing=False, pcr_pacing=False):
     total_sent = 0
     total_dropped = 0
     last_log = steady_time()
+    last_state = last_log
+    last_output = None
     estimator = InputRateEstimator()
     pacer = TokenPacer()
     pcr_pacer = PcrPacer() if pcr_pacing else None
@@ -472,6 +474,7 @@ def run(port, state_file, pacing=False, pcr_pacing=False):
                         if count:
                             del pending[:count]
                             total_sent += count
+                            last_output = now
                             if pacing:
                                 pacer.consume(count)
                 except socket.error as error:
@@ -505,17 +508,21 @@ def run(port, state_file, pacing=False, pcr_pacing=False):
                     "pcr" if pcr_pacing else "rate" if pacing else "no",
                      (estimator.rate or 0.0) * 8.0 / 1000000.0)
                 )
+                last_log = now
+            if now - last_state >= 1.0:
                 set_state(
                     state_file, "ready" if media_ready else "listening",
                     port=int(port), pending_kb=len(pending) // 1024,
                     dropped_kb=total_dropped // 1024,
                     client=bool(client),
+                    updated_monotonic=now, last_output_monotonic=last_output,
+                    input_bytes=total_input, output_bytes=total_sent,
                     paced=bool(pacing or pcr_pacing),
                     pacing_mbps=round(
                         (estimator.rate or 0.0) * 8.0 / 1000000.0, 1
                     ),
                 )
-                last_log = now
+                last_state = now
     finally:
         close_client(client)
         try:
@@ -530,11 +537,13 @@ def run(port, state_file, pacing=False, pcr_pacing=False):
 
 def main():
     if len(sys.argv) not in (3, 4):
-        log("usage: e2dub_http.py PORT STATE_FILE [paced|pcr]")
+        log("usage: e2dub_http.py PORT STATE_FILE [paced|pcr|unpaced]")
         return 2
     try:
         pacing = len(sys.argv) == 4 and sys.argv[3] == "paced"
-        pcr_pacing = len(sys.argv) == 4 and sys.argv[3] == "pcr"
+        # Native DreamOS demuxers also need the finished mux's media clock.
+        # Source pacing cannot regulate packets buffered inside FFmpeg.
+        pcr_pacing = len(sys.argv) == 3 or sys.argv[3] == "pcr"
         return run(int(sys.argv[1]), sys.argv[2], pacing=pacing,
                    pcr_pacing=pcr_pacing)
     except Exception as error:

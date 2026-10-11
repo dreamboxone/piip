@@ -205,6 +205,9 @@ class Log(object):
         with self._lock:
             for fh in self.handles:
                 try:
+                    if fh is not sys.stderr and fh.tell() >= 2 * 1024 * 1024:
+                        fh.seek(0)
+                        fh.truncate()
                     fh.write(line)
                 except Exception:
                     pass

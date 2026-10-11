@@ -12,9 +12,9 @@
 #
 """Where playback diagnostics are written, and how.
 
-Every translated playback gets its own folder on the hard disk, so the
-evidence of a failed test survives a lost SSH session, an Enigma2 restart
-and a reboot (/tmp is a RAM disk on these boxes). The folder collects
+Normal playback uses a verified RAM mount and bounded logs. An explicit
+diagnostic watch may select an external disk for evidence that must survive
+a reboot. The folder collects
 
     engine.jsonl   one line per second from the translation engine
     engine.log     the engine's own log (ffmpeg, Gemini, pipes)
@@ -35,8 +35,9 @@ import shutil
 import threading
 import time
 
-ROOTS = ('/media/hdd/piip_diag', '/media/usb/piip_diag', '/tmp/piip_diag')
 RAM_ROOT = '/tmp/piip_diag'
+ROOTS = (RAM_ROOT,)
+MAX_LOG_BYTES = 2 * 1024 * 1024
 # In RAM the sessions cost memory, so fewer of them are kept.
 KEEP_IN_RAM = 3
 # A running watch (translate/diag.py start) announces itself here. The
@@ -62,22 +63,18 @@ def _writable(folder):
 
 
 def root():
-    """Where session folders go: a plugged-in disk, otherwise RAM.
+    """Normal playback diagnostics go to verified RAM.
 
-    Every playback writes here once a second. A /media/hdd with no disk
-    behind it is the receiver's own flash, and a power cut in the middle of
-    those writes could leave an image that no longer boots. So a /media
-    folder is used only when storage.on_disk() says a real disk is mounted
-    there -- checked before anything is created, because even probing used
-    to make the folder on the flash.
+    The mount type is checked before creating even a probe file. Without
+    verified RAM this function returns None and automatic logging is off.
     """
-    from .storage import on_disk
+    from .storage import on_ram
     for folder in ROOTS:
-        if folder.startswith('/media/') and not on_disk(os.path.dirname(folder)):
+        if folder.startswith('/tmp') and not on_ram('/tmp'):
             continue
         if _writable(folder):
             return folder
-    return '/tmp'
+    return None
 
 
 def active_watch():
@@ -87,7 +84,9 @@ def active_watch():
             data = json.load(fh)
         if data.get('until') and time.time() > float(data['until']) + 120:
             return None
-        if data.get('dir') and os.path.isdir(data['dir']):
+        from .storage import on_ram, on_disk
+        folder = data.get('dir')
+        if folder and (on_ram(folder) or on_disk(folder)) and os.path.isdir(folder):
             return data
     except Exception:
         pass
@@ -102,6 +101,8 @@ def new_dir(kind='play', label=''):
         # one report covers the whole test.
         return watch['dir']
     base = root()
+    if base is None:
+        return None
     stamp = time.strftime('%Y%m%d-%H%M%S')
     safe = ''.join(ch if ch.isalnum() or ch in '-_' else '_'
                    for ch in (label or ''))[:32]
@@ -123,8 +124,9 @@ def prune(base, keep=None):
     if keep is None:
         keep = KEEP_IN_RAM if base.startswith('/tmp') else KEEP
     try:
-        names = sorted(n for n in os.listdir(base)
-                       if os.path.isdir(os.path.join(base, n)))
+        names = sorted((n for n in os.listdir(base)
+                        if os.path.isdir(os.path.join(base, n))),
+                       key=lambda n: os.path.getmtime(os.path.join(base, n)))
     except Exception:
         return
     watch = active_watch() or {}
@@ -136,10 +138,13 @@ def prune(base, keep=None):
 
 def latest(kind=None):
     base = root()
+    if base is None:
+        return None
     try:
-        names = sorted(n for n in os.listdir(base)
-                       if os.path.isdir(os.path.join(base, n)) and
-                       (kind is None or n.startswith(kind + '-')))
+        names = sorted((n for n in os.listdir(base)
+                        if os.path.isdir(os.path.join(base, n)) and
+                        (kind is None or n.startswith(kind + '-'))),
+                       key=lambda n: os.path.getmtime(os.path.join(base, n)))
     except Exception:
         return None
     return os.path.join(base, names[-1]) if names else None
@@ -167,6 +172,9 @@ class JsonLines(object):
             return
         with self._lock:
             try:
+                if self.fh.tell() >= MAX_LOG_BYTES:
+                    self.fh.seek(0)
+                    self.fh.truncate()
                 self.fh.write(line)
             except Exception:
                 pass
@@ -183,6 +191,9 @@ class JsonLines(object):
 
 def append_text(path, line):
     try:
+        if os.path.exists(path) and os.path.getsize(path) >= MAX_LOG_BYTES:
+            with open(path, 'w'):
+                pass
         with open(path, 'a') as fh:
             fh.write('%s %s\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), line))
     except Exception:

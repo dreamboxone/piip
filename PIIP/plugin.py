@@ -25,7 +25,7 @@ from Components.config import (
 )
 
 NAME = 'PIIP'
-VERSION = '3.0'
+VERSION = '5.7.19'
 
 config.plugins.piip = ConfigSubsection()
 _c = config.plugins.piip
